@@ -63,13 +63,6 @@ class Scheduler:
         self.resource_groups = resource_groups
         self.resources = resources
 
-        availability_slots = [
-            {"slot_id" : 0, "start":0, "end":4}, # duration 1
-            {"slot_id" : 1, "start":5, "end":10}, # duration 2
-            {"slot_id" : 2, "start":15, "end":20}, # duration 3
-            {"slot_id" : 3, "start":22, "end":50} # duration 4
-        ]
-
         model = cp_model.CpModel()
 
         # create resource bools
