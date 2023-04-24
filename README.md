@@ -43,7 +43,7 @@ s = Scheduler()
 s.schedule(tasks)
 ```
 If a solution is found, the program will print the optimal or feasible schedule with makespan, resource assignments, task start and end times, and durations.
-```python
+```
 Makespan = 8.0
 Assigned to resource 2
 Task (0, 0): starts: 0, end: 8, duration: 8
