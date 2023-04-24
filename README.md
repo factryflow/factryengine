@@ -18,15 +18,20 @@ from scheduler import Resource, ResourceGroup, Task, Scheduler
 ```
 2. Define resources and resource groups:
 ```python
-resource1 = Resource(resource_id=1)
-resource2 = Resource(resource_id=2)
-resource_group = ResourceGroup(resource_group_id=1, resources=[resource1, resource2])
+r1_availability_slots = [
+     {"slot_id" : 0, "start":0, "end":4},
+     {"slot_id" : 1, "start":5, "end":10}
+]
+r2_availability_slots = [
+     {"slot_id" : 0, "start":0, "end":10}
+]
+resource1 = Resource(id=1, availability_slots=r1_availability_slots)
+resource2 = Resource(id=2, availability_slots=r2_availability_slots)
+resource_group = ResourceGroup(id=1, resources=[resource1, resource2])
 ```
-3. Define tasks with duration, priority, and resource group:
+3. Define tasks with duration, and resource group:
 ```python
-task1 = Task(task_id=1, duration=3, priority=1, resource_group=resource_group)
-task2 = Task(task_id=2, duration=4, priority=2, resource_group=resource_group)
-tasks = [task1, task2]
+tasks = [Task(id=1, duration=3, resource_group=resource_group)]
 ```
 4. Set the scheduling horizon:
 ```python
@@ -34,6 +39,12 @@ horizon = 50
 ```
 5. Call the Scheduler function with tasks and horizon:
 ```python
-Scheduler(tasks, horizon)
+s = Scheduler()
+s.schedule(tasks)
 ```
 If a solution is found, the program will print the optimal or feasible schedule with makespan, resource assignments, task start and end times, and durations.
+```python
+Makespan = 8.0
+Assigned to resource 2
+Task (0, 0): starts: 0, end: 8, duration: 8
+```
