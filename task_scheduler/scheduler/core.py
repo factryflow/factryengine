@@ -2,15 +2,32 @@ from ortools.sat.python import cp_model
 from ..models.resource import Resource
 from ..models.resource_group import ResourceGroup
 from ..models.task import Task
+import time
 
 class Scheduler:
-    def __init__(self, tasks, horizon):
+
+    def __init__(
+            self, 
+            tasks, 
+            horizon,
+            time_limit=None,
+            solution_limit=None,
+            num_search_workers=None, 
+            optimality_tolerance=None
+            ):
+        
         self.tasks = tasks
         self.horizon = horizon
         self.resource_bools = None
         self.subtask_vars = None
+        self.time_limit = time_limit
+        self.solution_limit = solution_limit
+        self.num_search_workers = num_search_workers
+        self.optimality_tolerance = optimality_tolerance
 
     def schedule(self):
+        preprocessing_time = time.time()
+        # get data
         tasks = self.tasks
         horizon = self.horizon
 
@@ -18,7 +35,7 @@ class Scheduler:
         resources = set(resource for resource_group in resource_groups for resource in resource_group.resources) 
         self.resource_groups = resource_groups
         self.resources = resources
-
+        
         model = cp_model.CpModel()
 
         # create resource bools
@@ -157,11 +174,32 @@ class Scheduler:
         
         # Create a solver and solve the model
         solver = cp_model.CpSolver()
-        status = solver.Solve(model)
 
+        solution_printer = VarArraySolutionPrinterWithLimit([obj_var], self.solution_limit)
+
+        # Set solver parameters if provided
+        if self.time_limit is not None:
+            solver.parameters.max_time_in_seconds = self.time_limit
+
+        if self.num_search_workers is not None:
+            solver.parameters.num_search_workers = self.num_search_workers
+
+        if self.optimality_tolerance is not None:
+            solver.parameters.relative_gap_limit = self.optimality_tolerance
+
+        # Enumerate all solutions.
+        solver.parameters.enumerate_all_solutions = True
+
+        solver_start_time = time.time()
+        print(f"[INFO] Setup time: {round((solver_start_time- preprocessing_time),2)} seconds")
+
+        status = solver.Solve(model, solution_printer)
+        solver_end_time = time.time()
+
+        print(f'[INFO] Solver time: {round((solver_end_time - solver_start_time),2)} seconds')
         # Check the solver status and print the solution
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-            print(f"Makespan = {solver.ObjectiveValue()}")
+            print(f"\nMakespan = {solver.ObjectiveValue()}")
             for task in tasks:
                 for resource in task.get_resources():
                     if solver.BooleanValue(resource_bools[task.id, resource.id]):
@@ -182,3 +220,26 @@ class Scheduler:
                 
         else:
             print("No solution found.")
+    
+class VarArraySolutionPrinterWithLimit(cp_model.CpSolverSolutionCallback):
+    """Print intermediate solutions."""
+
+    def __init__(self, variables, limit=None):
+        cp_model.CpSolverSolutionCallback.__init__(self)
+        self.__variables = variables
+        self.__solution_count = 0
+        self.__solution_limit = limit
+
+    def on_solution_callback(self):
+        self.__solution_count += 1
+        for v in self.__variables:
+            
+            print(f"[INFO] Solution {self.__solution_count}:", '%s=%i' % (v, self.Value(v)), end=' ')
+        print()
+        if self.__solution_limit: # check if a limit is specified
+            if self.__solution_count >= self.__solution_limit:
+                print('Stop search after %i solutions' % self.__solution_limit)
+                self.StopSearch()
+
+    def solution_count(self):
+        return self.__solution_count
