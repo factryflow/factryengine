@@ -1,1 +1,23 @@
+# .gitignore
+
+# Ignore build and distribution directories
+build/
+dist/
+
+# Ignore Python cache files and directories
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore virtual environment directories
+venv/
+*.egg-info/
+
+# Ignore other common files
+*.log
+*.swp
+*.bak
+
+# ignore notebooks
 *.ipynb
