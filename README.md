@@ -1,4 +1,11 @@
-# Python Task Scheduler
+# PyPlanPro
+
+**UNDER CONSTRUCTION**
+
+This project is currently under construction and is not yet ready for use. We are working hard to bring you a great project, and will update this README as soon as it's ready for use. Thank you for your patience!
+
+In the meantime, feel free to check out the project code and contribute if you'd like. We welcome any feedback or suggestions you may have. 
+
 This Python program is a task scheduler that takes a set of tasks and assigns them to resources within their respective resource groups. The program uses Google OR-Tools library to build a constraint programming model and solve it, minimizing the makespan of the tasks.
 
 ## Features
