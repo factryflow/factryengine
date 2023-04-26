@@ -64,55 +64,55 @@ class Scheduler:
             task_vars[task.id]["end"] = task_end
             for resource in task.get_resources():
                 subtask_durations = []
-                for subtask_id, slot in enumerate(resource.availability_slots):
+                for subtask_id, (slot_start, slot_end) in enumerate(resource.availability_slots):
 
                     # create variables
-                    start = model.NewIntVar(slot["start"], slot["end"], f'start_{slot["start"]}')
-                    end = model.NewIntVar(slot["start"], slot["end"], f'end_{slot["end"]}')
-                    duration = model.NewIntVar(0, task_duration, f'duration_{slot["slot_id"]}')
+                    start = model.NewIntVar(slot_start, slot_end, f'start_{slot_start}')
+                    end = model.NewIntVar(slot_start, slot_end, f'end_{slot_end}')
+                    duration = model.NewIntVar(0, slot_end-slot_start, f'duration_{subtask_id}')
                     subtask_durations.append(duration)
-                    interval = model.NewIntervalVar(start, duration, end, f'interval_{task.id, slot["slot_id"]}')
+                    interval = model.NewIntervalVar(start, duration, end, f'interval_{task.id, subtask_id}')
 
                     # Create a BoolVar if duration greater than 0
-                    duration_gt_zero = model.NewBoolVar(f'duration_gt_zero_{task.id}_{slot["slot_id"]}')
+                    duration_gt_zero = model.NewBoolVar(f'duration_gt_zero_{task.id}_{subtask_id}')
                     model.Add(duration > 0).OnlyEnforceIf(duration_gt_zero)
                     model.Add(duration == 0).OnlyEnforceIf(duration_gt_zero.Not())
 
                     # Craete a BoolVar to check if duration equal sum of subtask durations
-                    duration_eq_sum_duration = model.NewBoolVar(f'duration_eq_sum_duration_{task.id}_{slot["slot_id"]}')
+                    duration_eq_sum_duration = model.NewBoolVar(f'duration_eq_sum_duration_{task.id}_{subtask_id}')
                     model.Add(sum(subtask_durations) == duration).OnlyEnforceIf(duration_eq_sum_duration)
                     model.Add(sum(subtask_durations) != duration).OnlyEnforceIf(duration_eq_sum_duration.Not())
     
                     # Craete a BoolVar to check if tasks has ended
-                    has_ended = model.NewBoolVar(f'has_ended{task.id}_{slot["slot_id"]}')
+                    has_ended = model.NewBoolVar(f'has_ended{task.id}_{subtask_id}')
                     model.Add(sum(subtask_durations) >= task_duration).OnlyEnforceIf(has_ended)
                     model.Add(sum(subtask_durations) < task_duration).OnlyEnforceIf(has_ended.Not())
 
                     # Create a BoolVar to check if slot is task start
-                    is_task_start = model.NewBoolVar(f'is_task_start_{task.id}_{slot["slot_id"]}')
+                    is_task_start = model.NewBoolVar(f'is_task_start_{task.id}_{subtask_id}')
                     model.AddBoolAnd([duration_gt_zero, duration_eq_sum_duration]).OnlyEnforceIf(is_task_start)
                     model.AddBoolOr([duration_gt_zero.Not(), duration_eq_sum_duration.Not()]).OnlyEnforceIf(is_task_start.Not())
 
                     # Create a BoolVar to check if task has ended
-                    is_task_end = model.NewBoolVar(f'is_task_end_{task.id}_{slot["slot_id"]}')
+                    is_task_end = model.NewBoolVar(f'is_task_end_{task.id}_{subtask_id}')
                     model.AddBoolAnd([has_ended, duration_gt_zero]).OnlyEnforceIf(is_task_end)
                     model.AddBoolOr([has_ended.Not(), duration_gt_zero.Not()]).OnlyEnforceIf(is_task_end.Not())
 
                     # Ensure is_in_progress is true when subtask_durations is between > 0 and 10
-                    is_in_progress = model.NewBoolVar(f'task_started_{task.id}_{slot["slot_id"]}')
+                    is_in_progress = model.NewBoolVar(f'task_started_{task.id}_{subtask_id}')
                     model.Add(sum(subtask_durations) > 0).OnlyEnforceIf(is_in_progress)
                     model.Add(sum(subtask_durations) == 0).OnlyEnforceIf(is_in_progress.Not())
                     
                     # Ensure subtasks are continuous 
                     # if task is in progress it should fill the whole slot
-                    model.Add(start == slot["start"]).OnlyEnforceIf((is_in_progress, has_ended.Not(), is_task_start.Not()))
-                    model.Add(end == slot["end"]).OnlyEnforceIf((is_in_progress, has_ended.Not(), is_task_start.Not()))
+                    model.Add(start == slot_start).OnlyEnforceIf((is_in_progress, has_ended.Not(), is_task_start.Not()))
+                    model.Add(end == slot_end).OnlyEnforceIf((is_in_progress, has_ended.Not(), is_task_start.Not()))
 
                     # if task is starting but not ending
-                    model.Add(end == slot["end"]).OnlyEnforceIf((is_task_start, is_task_end.Not()))
+                    model.Add(end == slot_end).OnlyEnforceIf((is_task_start, is_task_end.Not()))
 
                     # if task is ending but not starting
-                    model.Add(start == slot["start"]).OnlyEnforceIf((is_task_end,is_task_start.Not()))        
+                    model.Add(start == slot_start).OnlyEnforceIf((is_task_end,is_task_start.Not()))        
 
                     # set task_stat and task_end
                     model.Add(task_start == start).OnlyEnforceIf(is_task_start).OnlyEnforceIf(resource_bools[task.id,resource.id])       
@@ -121,7 +121,7 @@ class Scheduler:
                     # Add the subtask to the list
                     subtask_vars[task.id,resource.id].append({
                         "subtask_id" : subtask_id,
-                        "slot_id": slot["slot_id"],
+                        "slot_id": subtask_id,
                         "start" : start,
                         "duration" : duration,
                         "end" : end,
@@ -175,7 +175,7 @@ class Scheduler:
         # Create a solver and solve the model
         solver = cp_model.CpSolver()
 
-        solution_printer = VarArraySolutionPrinterWithLimit([obj_var], self.solution_limit)
+        solution_printer = self.VarArraySolutionPrinterWithLimit([obj_var], self.solution_limit)
 
         # Set solver parameters if provided
         if self.time_limit is not None:
@@ -221,24 +221,24 @@ class Scheduler:
         else:
             print("No solution found.")
     
-class VarArraySolutionPrinterWithLimit(cp_model.CpSolverSolutionCallback):
-    """Print intermediate solutions."""
+    class VarArraySolutionPrinterWithLimit(cp_model.CpSolverSolutionCallback):
+        """Print intermediate solutions."""
 
-    def __init__(self, variables, limit=None):
-        cp_model.CpSolverSolutionCallback.__init__(self)
-        self.__variables = variables
-        self.__solution_count = 0
-        self.__solution_limit = limit
+        def __init__(self, variables, limit=None):
+            cp_model.CpSolverSolutionCallback.__init__(self)
+            self.__variables = variables
+            self.__solution_count = 0
+            self.__solution_limit = limit
 
-    def on_solution_callback(self):
-        self.__solution_count += 1
-        for v in self.__variables:
-            
-            print(f"[INFO] Solution {self.__solution_count}:", '%s=%i' % (v, self.Value(v)), end=' ')
-        if self.__solution_limit: # check if a limit is specified
-            if self.__solution_count >= self.__solution_limit:
-                print('Stop search after %i solutions' % self.__solution_limit)
-                self.StopSearch()
+        def on_solution_callback(self):
+            self.__solution_count += 1
+            for v in self.__variables:
+                
+                print(f"[INFO] Solution {self.__solution_count}:", '%s=%i' % (v, self.Value(v)))
+            if self.__solution_limit: # check if a limit is specified
+                if self.__solution_count >= self.__solution_limit:
+                    print('Stop search after %i solutions' % self.__solution_limit)
+                    self.StopSearch()
 
-    def solution_count(self):
-        return self.__solution_count
+        def solution_count(self):
+            return self.__solution_count

@@ -4,13 +4,22 @@ from .resource import Resource
 
 @dataclass
 class ResourceGroup:
-    resource_group_id: int
+    id: int
     resources: List[Resource]
 
     def __eq__(self, other):
         if isinstance(other, ResourceGroup):
-            return self.resource_group_id == other.resource_group_id
+            return self.id == other.id
         return NotImplemented
     
     def __hash__(self):
-        return hash(self.resource_group_id)
+        return hash(self.id)
+    
+    def get_resource_by_id(self, id: int) -> Optional[Resource]:
+        """
+        Returns the `Resource` object with the given ID, or `None` if it doesn't exist.
+        """
+        for resource in self.resources:
+            if resource.id == id:
+                return resource
+        return None
