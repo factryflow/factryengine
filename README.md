@@ -18,10 +18,15 @@ To run this program, you need to have the following packages installed:
 
 Python 3.6 or later
 ortools (pip install ortools)
+
+## Installation
+```python
+pip install pyplanpro
+```
 ## Usage
 1. Import the necessary classes and functions:
 ```python
-from scheduler import Resource, ResourceGroup, Task, Scheduler
+from pyplanpro import Resource, ResourceGroup, Task, Scheduler
 ```
 2. Define resources and resource groups:
 ```python
@@ -47,7 +52,7 @@ horizon = 50
 5. Call the Scheduler function with tasks and horizon:
 ```python
 s = Scheduler()
-s.schedule(tasks)
+s.schedule(tasks, horizon= horizon)
 ```
 If a solution is found, the program will print the optimal or feasible schedule with makespan, resource assignments, task start and end times, and durations.
 ```
