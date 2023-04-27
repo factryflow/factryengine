@@ -1,15 +1,16 @@
 import networkx as nx
+from intervaltree import intervaltree
 
 class HeuristicSolver():
     def __init__(self, tasks, resources):
         self.tasks = tasks
-        self.resouces = resources
+        self.resources = resources
 
     def solve(self):
         task_ids_ordered = self._get_task_order(self.tasks)
         task_dict = {task.id: task for task in self.tasks}
         task_vars = {task.id: {} for task in self.tasks}
-        resource_intervals = self._get_resource_intervals(self.resouces)
+        resource_interval_trees = self._get_resource_interval_trees(self.resources)
 
         for task_id in task_ids_ordered:
             task = task_dict[task_id]
@@ -17,7 +18,7 @@ class HeuristicSolver():
             max_start_time = max((task_vars[pred.id].get('task_end',0) for pred in task.predecessors), default=0)
             
             # find the resource who completes the task first
-            fastest_resource = self._get_fastest_resource(task,resource_intervals, max_start_time)
+            fastest_resource = self._get_fastest_resource(task,resource_interval_trees, max_start_time)
             if fastest_resource is None:
                 print(f"No resource could be found for task_id = {task.id}")
                 continue
@@ -31,32 +32,65 @@ class HeuristicSolver():
             
             task_vars[task.id].update(task_values)
 
+            # update resource_intervals
+            resource_interval_trees = self._update_resource_interval_trees(
+                resource_interval_trees= resource_interval_trees,
+                resource_id= fastest_resource["resource"].id,
+                interval_index= fastest_resource["interval_index"],
+                task_start= fastest_resource["start_time"],
+                task_end= fastest_resource["end_time"]
+            )
         return task_vars
+    
     def _get_task_order(self, tasks):
         """
-        Given a dictionary of tasks with durations, predecessors, and priorities, this function returns a list of tasks
-        in the order required to complete them as quickly as possible while considering task priorities.
+        Returns a list of task IDs in the order required to complete them as quickly as possible while considering task priorities.
 
-        :return: List of tasks in the order required to complete them as quickly as possible considering task priorities.
+        :param tasks: List of tasks with durations, predecessors, and priorities.
+        :return: List of task IDs in the order required to complete them as quickly as possible while considering task priorities.
         """
-        
-        # Create a directed acyclic graph
-        G = nx.DiGraph()
+        task_graph = self._create_task_graph(tasks)
+        longest_path = self._compute_longest_paths(task_graph)
+        ordered_task_ids = self._custom_topological_sort(task_graph, tasks, longest_path)
+        return ordered_task_ids
 
-        # Add nodes and edges to the graph
-        for task  in tasks:
-            G.add_node(task.id, duration=task.duration, priority=task.priority)
+    def _create_task_graph(self, tasks):
+        """
+        Creates a directed acyclic graph from the given tasks.
+
+        :param tasks: List of tasks with durations, predecessors, and priorities.
+        :return: Directed acyclic graph representing task dependencies.
+        """
+        task_graph = nx.DiGraph()
+        for task in tasks:
+            task_graph.add_node(task.id, duration=task.duration, priority=task.priority)
             for predecessor in task.predecessors:
-                G.add_edge(predecessor.id, task.id)
+                task_graph.add_edge(predecessor.id, task.id)
+        return task_graph
 
-        # Compute the longest path for each node using a topological sort
-        longest_path = {task.id: 0 for task in tasks}
-        for task in nx.topological_sort(G):
-            duration = G.nodes[task]['duration']
-            for predecessor in G.predecessors(task):
+    def _compute_longest_paths(self, task_graph):
+        """
+        Computes the longest path for each node in the task graph using a topological sort.
+
+        :param task_graph: Directed acyclic graph representing task dependencies.
+        :return: Dictionary with task IDs as keys and the longest path for each task as values.
+        """
+        longest_path = {task.id: 0 for task in self.tasks}
+        for task in nx.topological_sort(task_graph):
+            duration = task_graph.nodes[task]['duration']
+            for predecessor in task_graph.predecessors(task):
                 longest_path[task] = max(longest_path[task], longest_path[predecessor] + duration)
+        return longest_path
 
-        # Custom topological sort considering priority and longest path
+    def _custom_topological_sort(self, task_graph, tasks, longest_path):
+        """
+        Performs a custom topological sort of tasks considering priority and longest path.
+
+        :param task_graph: Directed acyclic graph representing task dependencies.
+        :param tasks: List of tasks with durations, predecessors, and priorities.
+        :param longest_path: Dictionary with task IDs as keys and the longest path for each task as values.
+        :return: List of task IDs in the order required to complete them as quickly as possible while considering task priorities.
+        """
         visited = set()
         result = []
 
@@ -66,17 +100,15 @@ class HeuristicSolver():
             """
             if node not in visited:
                 visited.add(node)
-                # Sort predecessors by priority and longest path
                 predecessors = sorted(
-                    G.predecessors(node),
-                    key=lambda n: (G.nodes[n]['priority'], -longest_path[n])
+                    task_graph.predecessors(node),
+                    key=lambda n: (task_graph.nodes[n]['priority'], -longest_path[n])
                 )
                 for predecessor in predecessors:
                     visit(predecessor)
                 result.append(node)
 
-        # Start visiting tasks, sorting them by priority and longest path
-        for task in sorted(tasks, key=lambda t: (G.nodes[t.id]['priority'], -longest_path[t.id])):
+        for task in sorted(tasks, key=lambda t: (task_graph.nodes[t.id]['priority'], -longest_path[t.id])):
             visit(task.id)
 
         return result
@@ -101,67 +133,48 @@ class HeuristicSolver():
             return None
         return min(resource_start_ends, key=lambda x: x['end_time']) 
 
-    def _update_resource_intervals(self, resource_intervals, resource_id, interval_index, task_start, task_end):
-        interval = resource_intervals(resource_id).pop(interval_index)
-        new_intervals_slots = self._trim_and_split_interval(interval["slots"], task_start, task_end)
+    def _update_resource_interval_trees(self, resource_intervals, resource_id, interval_index, task_start, task_end):
+        interval = resource_intervals[resource_id].pop(interval_index)
+        new_intervals_slots = self._chop_and_split_interval_tree(interval["slots"], task_start, task_end)
         for interval_slots in new_intervals_slots:
             if interval_slots:
-                new_interval = self._create_resource_interval(interval_slots)
-                resource_intervals(resource_id).insert(interval_index, new_interval)
+                new_interval = self._create_resource_interval_tree(interval_slots)
+                resource_intervals[resource_id].insert(interval_index, new_interval)
         return resource_intervals
     
-    def _get_task_earliest_start_end(self, intervals, task_duration, latest_start_time=0):
+    def _get_task_earliest_start_end(self, interval_tree, task_duration, latest_start_time=0):
         remaining_duration = task_duration
-        task_start = None
-        for start, end in intervals:
-            if latest_start_time >= end:
-                continue
-
-            if start <= latest_start_time <= end:
-                task_start = latest_start_time
-                start = latest_start_time
-
-            slot_duration = end-start
-            if slot_duration >= remaining_duration:
-                task_end = end - (slot_duration - remaining_duration)
-                return (task_start,task_end) 
-            
-            remaining_duration -= slot_duration
+        interval_tree.chop(0,latest_start_time)
+        for interval in interval_tree:
+            start, end = interval.begin, interval.end
+            interval_duration = end-start
+            if interval_duration >= remaining_duration:
+                task_end = end - (interval_duration - remaining_duration)
+                return (start, task_end) 
+            remaining_duration -= interval_duration
         return None, None
+    
 
-    def _trim_and_split_interval(self, slots, task_start, task_end):
-        interval1 = []
-        interval2 = []
-        for start, end in slots:
-            # append full intervals
-            if task_start >= end:
-                interval1.append((start,end))
-                continue
-            if task_end <= start:
-                interval2.append((start,end))
-                continue
-            # trim intervals if between task_start and task_end
-            if task_start > start:
-                interval1.append((start, task_start))
-            if task_end < end:
-                interval2.append((task_end, end))
-        return interval1, interval2
+    def _three_split_interval_tree(interval_tree, first_point, second_point):
+        interval_tree.slice(first_point)
+        interval_tree.slice(second_point)
+        return interval_tree[:first_point] ,interval_tree[first_point:second_point], interval_tree[second_point:]
 
-    def _get_resource_intervals(self, resources):
-        return {resource.id : [self._create_resource_interval(resource.availability_slots)] for resource in resources}
+    def _get_resource_interval_trees(self, resources):
+        return {resource.id : [self._create_resource_interval_tree(resource.availability_slots)] for resource in resources}
 
-    def _create_resource_interval(self, slots):
+    def _create_resource_interval_tree(self, interval_tree):
         return {
-            "slots":slots,
-            "duration": self._get_interval_duration(slots),
-            "span": self._get_interval_start_end(slots)
+            "slots": interval_tree,
+            "duration": self._get_interval_tree_duration(interval_tree),
+            "span": self._get_interval_tree_start_end(interval_tree)
         }
     
-    def _get_interval_duration(self, slots):
-        return sum(end - start for start, end in slots)
+    def _get_interval_tree_duration(interval_tree):
+        return sum(interval.end - interval.begin for interval in interval_tree)
     
-    def _get_interval_start_end(self, slots):
-        return (slots[0][0], slots[-1][1])
+    def _get_interval_tree_start_end(self, interval_tree):
+        return (interval_tree[0][0], interval_tree[-1][1])
     
 
 
