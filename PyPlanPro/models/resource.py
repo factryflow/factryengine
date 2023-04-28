@@ -27,6 +27,7 @@ class Resource:
             if slot[0] >= slot[1]:
                 raise ValueError("Availability slot start must be less than end")
         
+        
         # # Ensure no slots overlap
         # for i in range(len(self.availability_slots)):
         #     for j in range(i+1, len(self.availability_slots)):
