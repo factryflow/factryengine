@@ -1,5 +1,5 @@
 import networkx as nx
-from intervaltree import intervaltree
+from intervaltree import IntervalTree
 
 class HeuristicSolver():
     def __init__(self, tasks, resources):
@@ -27,7 +27,8 @@ class HeuristicSolver():
             task_values = {
                 "assigned_resource": fastest_resource["resource"], 
                 "task_start": fastest_resource["start_time"],
-                "task_end" : fastest_resource["end_time"]
+                "task_end" : fastest_resource["end_time"],
+                "task_intervals" : fastest_resource["interval_tree"]
                 }
             
             task_vars[task.id].update(task_values)
@@ -36,7 +37,7 @@ class HeuristicSolver():
             resource_interval_trees = self._update_resource_interval_trees(
                 resource_interval_trees= resource_interval_trees,
                 resource_id= fastest_resource["resource"].id,
-                interval_index= fastest_resource["interval_index"],
+                interval_tree_index= fastest_resource["interval_index"],
                 task_start= fastest_resource["start_time"],
                 task_end= fastest_resource["end_time"]
             )
@@ -121,60 +122,71 @@ class HeuristicSolver():
             for interval_index, interval in enumerate(resource_interval):
                 if interval["duration"] < task.duration:
                     continue
-                start, end = self._get_task_earliest_start_end(interval["slots"], task.duration, max_start_time)
+                start, end, interval_tree = self._get_task_earliest_start_end(interval["slots"], task.duration, max_start_time)
                 if start is not None:
                     resource_start_ends.append({
                         "resource": resource,
                         "interval_index": interval_index,
                         "start_time": start,
-                        "end_time": end
+                        "end_time": end,
+                        "interval_tree" : interval_tree 
                     })
         if not resource_start_ends:
             return None
         return min(resource_start_ends, key=lambda x: x['end_time']) 
 
-    def _update_resource_interval_trees(self, resource_intervals, resource_id, interval_index, task_start, task_end):
-        interval = resource_intervals[resource_id].pop(interval_index)
-        new_intervals_slots = self._chop_and_split_interval_tree(interval["slots"], task_start, task_end)
+    def _update_resource_interval_trees(self, resource_interval_trees, resource_id, interval_tree_index, task_start, task_end):
+        interval_tree = resource_interval_trees[resource_id].pop(interval_tree_index)
+        new_intervals_slots = self._chop_and_split_interval_tree(interval_tree["slots"], task_start, task_end)
         for interval_slots in new_intervals_slots:
             if interval_slots:
                 new_interval = self._create_resource_interval_tree(interval_slots)
-                resource_intervals[resource_id].insert(interval_index, new_interval)
-        return resource_intervals
+                resource_interval_trees[resource_id].insert(interval_tree_index, new_interval)
+        return resource_interval_trees
     
     def _get_task_earliest_start_end(self, interval_tree, task_duration, latest_start_time=0):
         remaining_duration = task_duration
         interval_tree.chop(0,latest_start_time)
+        task_start = interval_tree.begin()
         for interval in interval_tree:
             start, end = interval.begin, interval.end
             interval_duration = end-start
             if interval_duration >= remaining_duration:
                 task_end = end - (interval_duration - remaining_duration)
-                return (start, task_end) 
+                task_interval_tree = self._get_task_interval_tree(interval_tree, task_start, task_end)
+                return (task_start, task_end, task_interval_tree) 
             remaining_duration -= interval_duration
-        return None, None
+        return (None, None, None)
     
-
-    def _three_split_interval_tree(interval_tree, first_point, second_point):
+    def _get_task_interval_tree(self, interval_tree, task_start, task_end):
+        interval_tree.slice(task_start)
+        interval_tree.slice(task_end)
+        return interval_tree[task_start: task_end]
+    
+    def _chop_and_split_interval_tree(self, interval_tree, first_point, second_point):
         interval_tree.slice(first_point)
         interval_tree.slice(second_point)
-        return interval_tree[:first_point] ,interval_tree[first_point:second_point], interval_tree[second_point:]
+        return interval_tree[:first_point], interval_tree[second_point:]
 
     def _get_resource_interval_trees(self, resources):
         return {resource.id : [self._create_resource_interval_tree(resource.availability_slots)] for resource in resources}
 
-    def _create_resource_interval_tree(self, interval_tree):
+    def _create_resource_interval_tree(self, availability_slots):
+        interval_tree = self._availability_slots_to_interval_tree(availability_slots)
         return {
             "slots": interval_tree,
             "duration": self._get_interval_tree_duration(interval_tree),
             "span": self._get_interval_tree_start_end(interval_tree)
         }
     
-    def _get_interval_tree_duration(interval_tree):
+    def _availability_slots_to_interval_tree(self, availability_slots):
+        return IntervalTree.from_tuples(availability_slots)
+
+    def _get_interval_tree_duration(self, interval_tree):
         return sum(interval.end - interval.begin for interval in interval_tree)
     
     def _get_interval_tree_start_end(self, interval_tree):
-        return (interval_tree[0][0], interval_tree[-1][1])
+        return (interval_tree.begin(), interval_tree.end())
     
 
 
