@@ -22,7 +22,7 @@ def read_requirements(path):
 
 setup(
     name='pyplanpro',
-    version='0.0.4',
+    version='0.0.5',
     author='Jacob Østergaard Nielsen',
     author_email='jaoe@oestergaard-as.dk',
     description='Task scheduler for python',
