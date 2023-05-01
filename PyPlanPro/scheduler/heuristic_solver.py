@@ -34,7 +34,7 @@ class HeuristicSolver():
             task_vars[task.id].update(task_values)
 
             # update resource_intervals
-            resource_interval_trees = self._update_resource_interval_trees(
+            self._update_resource_interval_trees(
                 resource_interval_trees= resource_interval_trees,
                 resource_id= fastest_resource["resource"].id,
                 interval_tree_index= fastest_resource["interval_index"],
@@ -142,13 +142,12 @@ class HeuristicSolver():
             if interval_slots:
                 new_interval = self._create_resource_interval_tree(interval_slots)
                 resource_interval_trees[resource_id].insert(interval_tree_index, new_interval)
-        return resource_interval_trees
     
     def _get_task_earliest_start_end(self, interval_tree, task_duration, latest_start_time=0):
         remaining_duration = task_duration
         interval_tree.chop(0,latest_start_time)
         task_start = interval_tree.begin()
-        for interval in interval_tree:
+        for interval in sorted(interval_tree):
             start, end = interval.begin, interval.end
             interval_duration = end-start
             if interval_duration >= remaining_duration:
