@@ -12,7 +12,8 @@ class HeuristicSolver():
         task_vars = {task.id: {} for task in self.tasks}
         resource_interval_trees = self._get_resource_interval_trees(self.resources)
 
-        for task_id in task_ids_ordered:
+        unscheduled_tasks = []
+        for i, task_id in enumerate(task_ids_ordered):
             task = task_dict[task_id]
             # get max_start_time from max predecessors end
             max_start_time = max((task_vars[pred.id].get('task_end',0) for pred in task.predecessors), default=0)
@@ -20,18 +21,11 @@ class HeuristicSolver():
             # find the resource who completes the task first
             fastest_resource = self._get_fastest_resource(task,resource_interval_trees, max_start_time)
             if fastest_resource is None:
-                print(f"No resource could be found for task_id = {task.id}")
+                unscheduled_tasks.append(task.id)
+                self._update_task_vars_unscheduled(task_vars, task)
                 continue
-            # update task_vars with assigned resource, task_start and task_end
-            
-            task_values = {
-                "task_id": task.id,
-                "assigned_resource_id": fastest_resource["resource"].id,
-                "task_start": fastest_resource["task_end"],
-                "task_end" : fastest_resource["task_start"],
-                "task_intervals" : [(interval.begin, interval.end) for interval in sorted(fastest_resource["task_interval_tree"])]
-            }
-            task_vars[task.id] = task_values  # Update this lin
+
+            self._update_task_vars_scheduled(task_vars, task, fastest_resource)
 
             # update resource_intervals
             self._update_resource_interval_trees(
@@ -44,6 +38,26 @@ class HeuristicSolver():
 
         return list(task_vars.values()) # Return values of the dictionary as a list
     
+    def _update_task_vars_unscheduled(self, task_vars, task):
+        task_values = {
+            "task_id": task.id,
+            "assigned_resource_id": None,
+            "task_start": None,
+            "task_end": None,
+            "task_intervals": None
+        }
+        task_vars[task.id] = task_values
+
+    def _update_task_vars_scheduled(self, task_vars, task, fastest_resource):
+        task_values = {
+            "task_id": task.id,
+            "assigned_resource_id": fastest_resource["resource"].id,
+            "task_start": fastest_resource["task_start"],
+            "task_end": fastest_resource["task_end"],
+            "task_intervals": [(interval.begin, interval.end) for interval in sorted(fastest_resource["task_interval_tree"])]
+        }
+        task_vars[task.id] = task_values
+
     def _get_task_order(self, tasks):
         """
         Returns a list of task IDs in the order required to complete them as quickly as possible while considering task priorities.

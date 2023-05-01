@@ -11,4 +11,5 @@ class Scheduler():
         result = heuristic_solver.solve()
 
         scheduler_result = SchedulerResult(result)
+        print(scheduler_result.summary())
         return scheduler_result
