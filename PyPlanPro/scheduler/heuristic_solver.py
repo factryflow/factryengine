@@ -25,23 +25,24 @@ class HeuristicSolver():
             # update task_vars with assigned resource, task_start and task_end
             
             task_values = {
-                "assigned_resource": fastest_resource["resource"], 
-                "task_start": fastest_resource["start_time"],
-                "task_end" : fastest_resource["end_time"],
-                "task_intervals" : fastest_resource["interval_tree"]
-                }
-            
-            task_vars[task.id].update(task_values)
+                "task_id": task.id,
+                "assigned_resource_id": fastest_resource["resource"].id,
+                "task_start": fastest_resource["task_end"],
+                "task_end" : fastest_resource["task_start"],
+                "task_intervals" : [(interval.begin, interval.end) for interval in sorted(fastest_resource["task_interval_tree"])]
+            }
+            task_vars[task.id] = task_values  # Update this lin
 
             # update resource_intervals
             self._update_resource_interval_trees(
                 resource_interval_trees= resource_interval_trees,
                 resource_id= fastest_resource["resource"].id,
                 interval_tree_index= fastest_resource["interval_index"],
-                task_start= fastest_resource["start_time"],
-                task_end= fastest_resource["end_time"]
+                task_start= fastest_resource["task_start"],
+                task_end= fastest_resource["task_end"]
             )
-        return task_vars
+
+        return list(task_vars.values()) # Return values of the dictionary as a list
     
     def _get_task_order(self, tasks):
         """
@@ -122,18 +123,18 @@ class HeuristicSolver():
             for interval_index, interval in enumerate(resource_interval):
                 if interval["duration"] < task.duration:
                     continue
-                start, end, interval_tree = self._get_task_earliest_start_end(interval["slots"], task.duration, max_start_time)
-                if start is not None:
+                task_start, task_end, task_interval_tree = self._get_task_earliest_start_end(interval["slots"], task.duration, max_start_time)
+                if task_start is not None:
                     resource_start_ends.append({
                         "resource": resource,
                         "interval_index": interval_index,
-                        "start_time": start,
-                        "end_time": end,
-                        "interval_tree" : interval_tree 
+                        "task_start": task_start,
+                        "task_end": task_end,
+                        "task_interval_tree" : task_interval_tree 
                     })
         if not resource_start_ends:
             return None
-        return min(resource_start_ends, key=lambda x: x['end_time']) 
+        return min(resource_start_ends, key=lambda x: x['task_end']) 
 
     def _update_resource_interval_trees(self, resource_interval_trees, resource_id, interval_tree_index, task_start, task_end):
         interval_tree = resource_interval_trees[resource_id].pop(interval_tree_index)

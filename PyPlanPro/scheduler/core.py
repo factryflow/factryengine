@@ -1,4 +1,5 @@
 from .heuristic_solver import HeuristicSolver
+from .scheduler_result import SchedulerResult
 
 class Scheduler():
     def __init__(self, tasks, resources):
@@ -6,5 +7,8 @@ class Scheduler():
         self.resources = resources
     
     def schedule(self):
-        solver = HeuristicSolver(self.tasks, self.resources)
-        return solver.solve()
+        heuristic_solver = HeuristicSolver(self.tasks, self.resources)
+        result = heuristic_solver.solve()
+
+        scheduler_result = SchedulerResult(result)
+        return scheduler_result

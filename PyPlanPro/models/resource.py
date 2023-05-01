@@ -23,12 +23,3 @@ class Resource:
                 raise ValueError("Availability slot start and end must be integers")
             if slot[0] >= slot[1]:
                 raise ValueError("Availability slot start must be less than end")
-        
-        
-        # # Ensure no slots overlap
-        # for i in range(len(self.availability_slots)):
-        #     for j in range(i+1, len(self.availability_slots)):
-        #         slot1_start, slot1_end = self.availability_slots[i]
-        #         slot2_start, slot2_end = self.availability_slots[j]
-        #         if slot1_start <= slot2_start < slot1_end or slot2_start <= slot1_start < slot2_end:
-        #             raise ValueError("Availability slots cannot overlap")
