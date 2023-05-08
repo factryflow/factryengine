@@ -9,6 +9,7 @@ class Task:
     priority: int
     resource_group: ResourceGroup
     predecessors: Optional[List['Task']] = field(default_factory=list)
+    predecessor_delay: int = 0
 
     def __eq__(self, other):
         if isinstance(other, Task):

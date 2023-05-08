@@ -15,11 +15,11 @@ class HeuristicSolver():
         unscheduled_tasks = []
         for i, task_id in enumerate(task_ids_ordered):
             task = task_dict[task_id]
-            # get max_start_time from max predecessors end
-            max_start_time = max((task_vars[pred.id].get('task_end',0) for pred in task.predecessors), default=0)
-            
+            # get earliest start from max predecessors end
+            task_earliest_start = self._get_task_earliest_start(task_vars, task)
+
             # find the resource who completes the task first
-            fastest_resource = self._get_fastest_resource(task,resource_interval_trees, max_start_time)
+            fastest_resource = self._get_fastest_resource(task,resource_interval_trees, task_earliest_start)
             if fastest_resource is None:
                 unscheduled_tasks.append(task.id)
                 self._update_task_vars_unscheduled(task_vars, task)
@@ -57,6 +57,10 @@ class HeuristicSolver():
             "task_intervals": [(interval.begin, interval.end) for interval in sorted(fastest_resource["task_interval_tree"])]
         }
         task_vars[task.id] = task_values
+
+    def _get_task_earliest_start(self, task_vars, task):
+        predecessor_max_end = max((task_vars[pred.id].get('task_end',0) for pred in task.predecessors), default=0)
+        return predecessor_max_end + task.predecessor_delay
 
     def _get_task_order(self, tasks):
         """

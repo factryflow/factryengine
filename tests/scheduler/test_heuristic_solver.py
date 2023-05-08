@@ -1,5 +1,5 @@
-from pyplanpro import Resource, Task, ResourceGroup
-from pyplanpro.scheduler.heuristic_solver import HeuristicSolver
+from PyPlanPro import Resource, Task, ResourceGroup
+from PyPlanPro.scheduler.heuristic_solver import HeuristicSolver
 from intervaltree import IntervalTree, Interval
 import pytest
 import copy
@@ -13,7 +13,7 @@ resources = [
 rg = ResourceGroup(id=1, resources=resources)
 tasks = [
     Task(id=0, duration=10, priority=1, resource_group=rg),
-    Task(id=1, duration=5, priority=2, resource_group=rg),
+    Task(id=1, duration=5, priority=2, resource_group=rg, predecessor_delay=5),
     Task(id=2, duration=10, priority=2, resource_group=rg),
     Task(id=3, duration=5, priority=3, resource_group=rg),
     Task(id=4, duration=1, priority=4, resource_group=rg)
