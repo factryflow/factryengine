@@ -17,6 +17,10 @@ class HeuristicSolver():
             task = task_dict[task_id]
             # get earliest start from max predecessors end
             task_earliest_start = self._get_task_earliest_start(task_vars, task)
+            if task_earliest_start is None:
+                unscheduled_tasks.append(task.id)
+                self._update_task_vars_unscheduled(task_vars, task)
+                continue
 
             # find the resource who completes the task first
             fastest_resource = self._get_fastest_resource(task,resource_interval_trees, task_earliest_start)
@@ -60,7 +64,10 @@ class HeuristicSolver():
 
     def _get_task_earliest_start(self, task_vars, task):
         predecessor_max_end = max((task_vars[pred.id].get('task_end',0) for pred in task.predecessors), default=0)
-        return predecessor_max_end + task.predecessor_delay
+        if predecessor_max_end:
+            return predecessor_max_end + task.predecessor_delay
+        else: 
+            return predecessor_max_end
 
     def _get_task_order(self, tasks):
         """
