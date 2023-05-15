@@ -71,7 +71,6 @@ class HeuristicSolver():
         max_task_end = 0
         for pred in task.predecessors:
             task_end = task_vars[pred.id].get('task_end')
-            print(task.id, task_end)
             if task_end is None:
                 return None
             max_task_end = max(max_task_end, task_end)
