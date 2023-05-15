@@ -65,7 +65,7 @@ class HeuristicSolver():
     def _get_task_earliest_start(self, task_vars, task):
         # If there are no predecessors, return task.predecessor_delay
         if not task.predecessors:
-            return task.predecessor_delay
+            return 0
 
         # find max predecessor end. If one pred is none then return none
         max_task_end = 0
