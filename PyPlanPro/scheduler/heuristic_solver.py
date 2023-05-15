@@ -63,12 +63,21 @@ class HeuristicSolver():
         task_vars[task.id] = task_values
 
     def _get_task_earliest_start(self, task_vars, task):
-        predecessor_max_end = max((task_vars[pred.id].get('task_end',0) for pred in task.predecessors), default=0)
-        if predecessor_max_end:
-            return predecessor_max_end + task.predecessor_delay
-        else: 
-            return predecessor_max_end
+        # If there are no predecessors, return task.predecessor_delay
+        if not task.predecessors:
+            return task.predecessor_delay
 
+        # find max predecessor end. If one pred is none then return none
+        max_task_end = 0
+        for pred in task.predecessors:
+            task_end = task_vars[pred.id].get('task_end')
+            print(task.id, task_end)
+            if task_end is None:
+                return None
+            max_task_end = max(max_task_end, task_end)
+
+        return max_task_end + task.predecessor_delay
+ 
     def _get_task_order(self, tasks):
         """
         Returns a list of task IDs in the order required to complete them as quickly as possible while considering task priorities.
