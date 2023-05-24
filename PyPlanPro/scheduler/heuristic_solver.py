@@ -1,4 +1,5 @@
 import networkx as nx
+import copy
 from intervaltree import IntervalTree
 
 class HeuristicSolver():
@@ -11,8 +12,8 @@ class HeuristicSolver():
         task_dict = {task.id: task for task in self.tasks}
         task_vars = {task.id: {} for task in self.tasks}
         resource_interval_trees = self._get_resource_interval_trees(self.resources)
-
         unscheduled_tasks = []
+
         for i, task_id in enumerate(task_ids_ordered):
             task = task_dict[task_id]
             # get earliest start from max predecessors end
@@ -148,12 +149,12 @@ class HeuristicSolver():
 
         return result
 
-    def _get_fastest_resource(self, task, resource_intervals, max_start_time):
+    def _get_fastest_resource(self, task, resource_interval_trees, max_start_time):
         """Returns the resource with the earliest end time for a task."""
         resource_start_ends = []
         for resource in task.get_resources():
-            resource_interval = resource_intervals[resource.id]
-            for interval_index, interval in enumerate(resource_interval):
+            interval_trees = resource_interval_trees[resource.id]
+            for interval_index, interval in enumerate(interval_trees):
                 if interval["duration"] < task.duration:
                     continue
                 task_start, task_end, task_interval_tree = self._get_task_earliest_start_end(interval["slots"], task.duration, max_start_time)
@@ -178,8 +179,12 @@ class HeuristicSolver():
                 resource_interval_trees[resource_id].insert(interval_tree_index, new_interval)
     
     def _get_task_earliest_start_end(self, interval_tree, task_duration, latest_start_time=0):
+        interval_tree = copy.deepcopy(interval_tree)
+        # set remaining duration equal to task_duration
         remaining_duration = task_duration
+        # trim start of interval tree 
         interval_tree.chop(0,latest_start_time)
+        
         task_start = interval_tree.begin()
         for interval in sorted(interval_tree):
             start, end = interval.begin, interval.end
@@ -188,6 +193,8 @@ class HeuristicSolver():
                 task_end = end - (interval_duration - remaining_duration)
                 task_interval_tree = self._get_task_interval_tree(interval_tree, task_start, task_end)
                 return (task_start, task_end, task_interval_tree) 
+            
+            # update remaining duration
             remaining_duration -= interval_duration
         return (None, None, None)
     
