@@ -153,11 +153,12 @@ class HeuristicSolver():
         """Returns the resource with the earliest end time for a task."""
         resource_start_ends = []
         for resource in task.get_resources():
+            task_duration = self._get_task_duration(task, resource)
             interval_trees = resource_interval_trees[resource.id]
             for interval_index, interval in enumerate(interval_trees):
-                if interval["duration"] < task.duration:
+                if interval["duration"] < task_duration:
                     continue
-                task_start, task_end, task_interval_tree = self._get_task_earliest_start_end(interval["slots"], task.duration, max_start_time)
+                task_start, task_end, task_interval_tree = self._get_task_earliest_start_end(interval["slots"], task_duration, max_start_time)
                 if task_start is not None:
                     resource_start_ends.append({
                         "resource": resource,
@@ -227,6 +228,12 @@ class HeuristicSolver():
     
     def _get_interval_tree_start_end(self, interval_tree):
         return (interval_tree.begin(), interval_tree.end())
+    
+    def _get_task_duration(self, task ,resource):
+        # duration / (multipler 1 * multiplier 2) = 1 / (2*2) = 0.25
+        return task.duration / (task.resource_group.efficiency_multiplier * resource.efficiency_multiplier)
+         
+
     
 
 

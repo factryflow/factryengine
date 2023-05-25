@@ -1,19 +1,24 @@
-from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
+from typing import List, Optional
+from pydantic import BaseModel
 from .resource import Resource
 
-@dataclass
-class ResourceGroup:
+class ResourceGroup(BaseModel):
     id: int
     resources: List[Resource]
+    efficiency_multiplier: float = 1
 
-    def __eq__(self, other):
-        if isinstance(other, ResourceGroup):
-            return self.id == other.id
-        return NotImplemented
+    # class Config:
+    #     # This is needed to allow comparison using id
+    #     # Pydantic models are not hashable out of the box
+    #     allow_mutation = False
+
+    # def __eq__(self, other):
+    #     if isinstance(other, ResourceGroup):
+    #         return self.id == other.id
+    #     return NotImplemented
     
-    def __hash__(self):
-        return hash(self.id)
+    # def __hash__(self):
+    #     return hash(self.id)
     
     def get_resource_by_id(self, id: int) -> Optional[Resource]:
         """
