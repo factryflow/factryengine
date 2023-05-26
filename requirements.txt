@@ -2,3 +2,5 @@ ortools
 intervaltree
 networkx
 pandas
+pydantic
+seaborn

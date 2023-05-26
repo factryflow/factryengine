@@ -2,9 +2,10 @@ from .heuristic_solver import HeuristicSolver
 from .scheduler_result import SchedulerResult
 
 class Scheduler():
-    def __init__(self, tasks, resources):
+    def __init__(self, tasks):
         self.tasks = tasks
-        self.resources = resources
+        self.resource_groups = set([task.resource_group for task in tasks])
+        self.resources = set([resource for rg in self.resource_groups for resource in rg.resources])
     
     def schedule(self):
         heuristic_solver = HeuristicSolver(self.tasks, self.resources)
