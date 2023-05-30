@@ -1,14 +1,14 @@
 from typing import List, Optional
 from pydantic import BaseModel
-from .resource_group import ResourceGroup
+from .constraint import Constraint
 
 class Task(BaseModel):
     id: int
     duration: int
     priority: int
-    resource_group: ResourceGroup
+    constraints: List[Constraint]
     predecessors: Optional[List['Task']] = []
     predecessor_delay: int = 0
     
     def get_resources(self):
-        return self.resource_group.resources
+        return {resource for constraint in self.constraints for resource in constraint.get_resources()}
