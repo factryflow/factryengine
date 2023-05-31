@@ -4,6 +4,7 @@ class AvailabilitySlot():
 
     def __init__(self, intervals):
         self.tree = IntervalTree.from_tuples(intervals)
+        self._duration = None
 
     def intersection(self, other):
         result = IntervalTree()
@@ -32,7 +33,13 @@ class AvailabilitySlot():
     def get_duration(self):
         return sum(interval.end - interval.begin for interval in self.tree)
     
-    def start(self):
+    @property
+    def duration(self):
+        if self._duration is None:  # Calculate duration if not cached
+            self._duration = sum(interval.end - interval.begin for interval in self.tree)
+        return self._duration
+    
+    def begin(self):
         return self.tree.begin()
     
     def end(self):
