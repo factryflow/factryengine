@@ -4,8 +4,7 @@ from .scheduler_result import SchedulerResult
 class Scheduler():
     def __init__(self, tasks):
         self.tasks = tasks
-        self.resource_groups = set([task.resource_group for task in tasks])
-        self.resources = set([resource for rg in self.resource_groups for resource in rg.resources])
+        self.resources = set([resource for task in tasks for constraint in task.constraints for resource in constraint.get_resources()])
     
     def schedule(self):
         heuristic_solver = HeuristicSolver(self.tasks, self.resources)
