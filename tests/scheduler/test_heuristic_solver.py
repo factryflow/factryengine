@@ -1,5 +1,5 @@
-from PyPlanPro import Resource, Task, ResourceGroup
-from PyPlanPro.scheduler.heuristic_solver import HeuristicSolver
+from pyplanpro import Resource, Task, ResourceGroup
+from pyplanpro.scheduler.heuristic_solver import HeuristicSolver
 from intervaltree import IntervalTree, Interval
 import pytest
 import copy

@@ -1,4 +1,4 @@
-from .heuristic_solver import HeuristicSolver
+from .heuristic_solver.main import HeuristicSolver
 from .scheduler_result import SchedulerResult
 
 class Scheduler():
