@@ -47,18 +47,22 @@ class TaskAllocator:
         if task_duration > arr_sum.max():
             print("no soluton found")
             return None
-
         solution_index = np.argmax(arr_sum >= task_duration)
+        solution_resource_cols = ~masked_resource_matrix.mask[solution_index]
+        resources = [
+            k for k, v in zip(resource_windows_dict, solution_resource_cols) if v
+        ]
         solution_matrix = self._linear_expand_matrix(
-            matrix[: solution_index + 1], solution_index
+            matrix[: solution_index + 1, np.insert(solution_resource_cols, 0, True)],
+            solution_index,
         )
         allocated_windows = self._solution_to_resource_windows(
-            solution_matrix, task_duration
+            solution_matrix, task_duration, resources
         )
         return allocated_windows
 
     def _solution_to_resource_windows(
-        self, solution_matrix, task_duration
+        self, solution_matrix, task_duration, resources
     ) -> List[Tuple[float, float]]:
         """
         Transforms the solution matrix into resource windows that indicate where the task will
@@ -71,10 +75,43 @@ class TaskAllocator:
         arr = resource_matrix.sum(axis=1)
 
         solution_index = np.argmax(arr >= task_duration)
-        resource_windows = [
-            (intervals[0], intervals[solution_index]) for i in range(resource_count)
-        ]
-        return resource_windows
+        resource_indexes = self._get_resource_start_end_indexes(
+            resource_matrix, solution_index
+        )
+        print(resource_indexes, resource_matrix)
+
+        resource_windows_dict = {
+            resource_id: (intervals[start_index], intervals[end_index])
+            for resource_id, (start_index, end_index) in zip(
+                resources, resource_indexes
+            )
+            if start_index != end_index
+        }
+        return resource_windows_dict
+
+    def _window_start_index(self, arr):
+        zero_indices = np.nonzero(arr == 0)  # Find the indices of zeros from the end
+
+        if zero_indices[0].size > 0:
+            return zero_indices[0][-1]
+        else:
+            return 0
+
+    def _window_end_index(self, arr, start_index=0):
+        diff = np.diff(arr[start_index:])
+        indices = np.where(diff <= 0)[0]
+        if indices.size > 0:
+            return indices[0] + start_index
+        else:
+            return len(arr) - 1
+
+    def _get_resource_start_end_indexes(self, resource_matrix, end_index):
+        resource_indexes = []
+        for arr in resource_matrix.T:
+            start_index = self._window_start_index(arr)
+            end_index = self._window_end_index(arr, start_index)
+            resource_indexes.append((start_index, end_index))
+        return resource_indexes
 
     def _pad_array_with_zeros(self, arr, num_cols) -> np.ndarray:
         """
