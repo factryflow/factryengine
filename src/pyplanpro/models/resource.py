@@ -1,9 +1,9 @@
-from typing import List, Tuple
-from pydantic import BaseModel, validator
+from pydantic import BaseModel
+
 
 class Resource(BaseModel):
     id: int
-    available_time_windows: List[Tuple[int, int]] = []
+    available_windows: list[tuple[int, int]] = []
     efficiency_multiplier: float = 1
 
     def __hash__(self):
@@ -17,5 +17,7 @@ class Resource(BaseModel):
     # @validator('availability_slots', each_item=True)
     # def validate_slots(cls, slot):
     #     if slot[0] >= slot[1]:
+    #         raise ValueError("Availability slot start must be less than end")
+    #     return slot
     #         raise ValueError("Availability slot start must be less than end")
     #     return slot
