@@ -19,7 +19,8 @@ class TaskGraph:
 
     def _compute_longest_paths(self):
         """
-        Computes the longest path for each node in the task graph using a topological sort.
+        Computes the longest path for each node in the task graph using a topological
+        sort.
         """
         longest_path = {task_id: 0 for task_id in self.tasks}
         for task in nx.topological_sort(self.graph):
@@ -32,7 +33,8 @@ class TaskGraph:
 
     def _custom_topological_sort(self, longest_path):
         """
-        Performs a custom topological sort of tasks considering priority and longest path.
+        Performs a custom topological sort of tasks considering priority and longest
+        path.
         """
         visited = set()
         result = []
@@ -61,7 +63,8 @@ class TaskGraph:
 
     def get_task_order(self):
         """
-        Returns a list of task IDs in the order required to complete them as quickly as possible while considering task priorities.
+        Returns a list of task IDs in the order required to complete them as quickly
+        as possible while considering task priorities.
         """
         longest_path = self._compute_longest_paths()
         return self._custom_topological_sort(longest_path)
