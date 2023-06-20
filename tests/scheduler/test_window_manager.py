@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from pyplanpro import Resource
 from pyplanpro.scheduler.heuristic_solver.window_manager import WindowManager
 
@@ -103,5 +104,5 @@ test_case_values = [
     ids=[case[0] for case in test_case_values],
 )
 def test_trim_windows(test_name, windows, trim_interval, expected):
-    result = window_manager.trim_windows(windows, trim_interval)
+    result = window_manager.trim_window(windows, trim_interval)
     assert np.array_equal(result, expected)
