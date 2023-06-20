@@ -9,9 +9,12 @@ class TaskAllocator:
     ) -> Optional[dict[int, np.array]]:
         windows = list(resource_windows_dict.values())
         matrix = self.create_matrix(windows)
-        resource_ids = np.array([resource_windows_dict.keys()])
+        resource_ids = np.array(list(resource_windows_dict.keys()))
         allocated_windows = self.find_earliest_solution(
-            matrix, task_duration, resource_ids, resource_count
+            matrix=matrix,
+            task_duration=task_duration,
+            resource_ids=resource_ids,
+            resource_count=resource_count,
         )
 
         return allocated_windows
@@ -108,7 +111,6 @@ class TaskAllocator:
             return 0
 
     def _get_resource_intervals(self, solution_matrix, resources):
-        print(solution_matrix)
         start_indexes = [
             self._get_window_start_index(resource_arr)
             for resource_arr in solution_matrix[:, 1:].T
