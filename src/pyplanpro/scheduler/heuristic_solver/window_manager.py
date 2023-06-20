@@ -24,50 +24,157 @@ class WindowManager:
         arr = np.array(windows)
         return np.concatenate([arr, np.diff(arr), np.zeros((arr.shape[0], 1))], axis=1)
 
-    def trim_windows(
-        self, windows: np.ndarray, trim_interval: tuple[int, int]
+    def update_resource_windows(
+        self, allocated_resource_windows_dict: dict[int, tuple[int, int]]
+    ) -> None:
+        """
+        Removes the task interaval from the resource windows
+        """
+        for resource_id, trim_interval in allocated_resource_windows_dict.items():
+            window = self.resource_windows_dict[resource_id]
+            self.resource_windows_dict[resource_id] = self.trim_window(
+                window, trim_interval
+            )
+
+    def trim_window(
+        self, window: np.ndarray, trim_interval: tuple[int, int]
     ) -> np.ndarray:
         """
         Trims the provided windows based on the provided trim window.
         """
         trim_start, trim_end = trim_interval
 
-        # Find the range of intervals that could potentially overlap with trim_interval
-        start_idx = np.searchsorted(windows[:, 1], trim_start, side="right")
-        end_idx = np.searchsorted(windows[:, 0], trim_end, side="left")
+        start_idx = np.searchsorted(window[:, 1], trim_start, side="right")
+        end_idx = np.searchsorted(window[:, 0], trim_end, side="left")
 
-        # If no overlap, return original intervals
         if start_idx == end_idx:
-            return windows
+            return window
 
-        # Identify intervals for trimming or removing
-        overlap_windows = windows[start_idx:end_idx]
+        overlap_windows = window[start_idx:end_idx]
         mask_end = overlap_windows[:, 1] <= trim_end
         mask_start = overlap_windows[:, 0] >= trim_start
         mask_delete = np.logical_and(mask_end, mask_start)
+        mask_between = np.logical_and(
+            overlap_windows[:, 0] < trim_start, overlap_windows[:, 1] > trim_end
+        )
 
-        print(overlap_windows)
-        # Trim the end of intervals that start before and end within the trim_interval
-        if mask_end.any():
+        slopes = self._calculate_slopes(
+            overlap_windows
+        )  # Compute slopes for all overlap_windows
+
+        window = self._handle_mask_between(
+            window,
+            overlap_windows,
+            mask_between,
+            slopes,
+            trim_start,
+            trim_end,
+            start_idx,
+            end_idx,
+        )
+        window = self._handle_mask_end(
+            window, overlap_windows, mask_end, slopes, trim_start, end_idx
+        )
+        window = self._handle_mask_start(
+            window, overlap_windows, mask_start, slopes, trim_end
+        )
+        window = self._delete_overlapped_windows(
+            window, mask_delete, start_idx, end_idx
+        )
+
+        return window
+
+    def _calculate_slopes(self, windows: np.ndarray) -> np.ndarray:
+        """
+        Calculates the slopes for the given windows.
+        """
+        return (windows[:, 2] - windows[:, 3]) / (windows[:, 1] - windows[:, 0])
+
+    def _handle_mask_between(
+        self,
+        windows: np.ndarray,
+        overlap_windows: np.ndarray,
+        mask_between: np.ndarray,
+        slopes: np.ndarray,
+        trim_start: int,
+        trim_end: int,
+        start_idx: int,
+        end_idx: int,
+    ) -> np.ndarray:
+        """
+        Handles the case where mask_between is True.
+        """
+        if np.any(mask_between):
+            slopes_between = slopes[mask_between]
+            overlap_windows = np.concatenate([overlap_windows, overlap_windows])
+            overlap_windows[0, 1] = trim_start
+            overlap_windows[0, 2] = (
+                overlap_windows[0, 1] - overlap_windows[0, 0]
+            ) * slopes_between
+
+            overlap_windows[1, 0] = trim_end
+            overlap_windows[1, 2] = (
+                overlap_windows[1, 1] - overlap_windows[1, 0]
+            ) * slopes_between
+            overlap_windows[1, 3] = 1
+
+            return np.concatenate(
+                (windows[:start_idx], overlap_windows, windows[end_idx:])
+            )
+
+        return windows
+
+    def _handle_mask_end(
+        self,
+        windows: np.ndarray,
+        overlap_windows: np.ndarray,
+        mask_end: np.ndarray,
+        slopes: np.ndarray,
+        trim_start: int,
+        end_idx: int,
+    ) -> np.ndarray:
+        """
+        Handles the case where mask_end is True.
+        """
+        if np.any(mask_end):
+            slopes_end = slopes[mask_end]
             overlap_windows[mask_end, 1] = trim_start
             overlap_windows[mask_end, 2] = (
                 overlap_windows[mask_end, 1] - overlap_windows[mask_end, 0]
-            )
+            ) * slopes_end
             end_idx_temp = min(end_idx, windows.shape[0] - 1)  # handle out of bounds
             windows[end_idx_temp, 3] = 1
 
-        # Trim the start of intervals that start within and end after the trim_interval
-        if mask_start.any():
+        return windows
+
+    def _handle_mask_start(
+        self,
+        windows: np.ndarray,
+        overlap_windows: np.ndarray,
+        mask_start: np.ndarray,
+        slopes: np.ndarray,
+        trim_end: int,
+    ) -> np.ndarray:
+        """
+        Handles the case where mask_start is True.
+        """
+        if np.any(mask_start):
+            slopes_start = slopes[mask_start]
             overlap_windows[mask_start, 0] = trim_end
             overlap_windows[mask_start, 2] = (
                 overlap_windows[mask_start, 1] - overlap_windows[mask_start, 0]
-            )
+            ) * slopes_start
             overlap_windows[mask_start, 3] = 1
 
-        # Replace the old intervals with the updated ones, and delete fully overlapped ones  # noqa: E501
-        windows[start_idx:end_idx] = overlap_windows
+        return windows
 
-        if mask_delete.any():
+    def _delete_overlapped_windows(
+        self, windows: np.ndarray, mask_delete: np.ndarray, start_idx: int, end_idx: int
+    ) -> np.ndarray:
+        """
+        Deletes the windows that fully overlap.
+        """
+        if np.any(mask_delete):
             windows = np.delete(
                 windows, np.arange(start_idx, end_idx)[mask_delete], axis=0
             )
