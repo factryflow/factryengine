@@ -8,9 +8,9 @@ class HeuristicSolver:
         self.task_allocator = TaskAllocator()
         self.task_graph = TaskGraph(tasks)
         self.window_manager = WindowManager(resources)
-        self.resource_windows_dict = WindowManager.create_resource_windows_dict()
         self.task_vars = {
             task.id: {
+                "task_id": task.id,
                 "assigned_resource_ids": None,
                 "task_start": None,
                 "task_end": None,
@@ -27,36 +27,35 @@ class HeuristicSolver:
             task = self.task_dict[task_id]
 
             # get task resources and windows dict
-            resources = task.get_resources()
-            resource_ids = [resource.id for resource in resources]
-            resource_windows_dict = {
-                id: self.resource_windows_dict[id] for id in resource_ids
+            task_resources = task.get_resources()
+            task_resource_ids = [resource.id for resource in task_resources]
+            task_resource_windows_dict = {
+                id: self.window_manager.resource_windows_dict[id]
+                for id in task_resource_ids
             }
 
-            allocated_resource_windows_dict = (
-                self.task_allocator.find_earliest_solution(
-                    task.duration, resource_windows_dict, task.resource_count
-                )
+            allocated_resource_windows_dict = self.task_allocator.allocate_task(
+                resource_windows_dict=task_resource_windows_dict,
+                task_duration=task.duration,
+                resource_count=task.resource_count,
             )
             if allocated_resource_windows_dict is None:
                 unscheduled_tasks.append(task_id)
                 continue
-
+            print(allocated_resource_windows_dict)
             # update resource windows
-            for (
-                resource_id,
-                allocated_window,
-            ) in allocated_resource_windows_dict.items():
-                window = self.resource_windows_dict[resource_id]
-                window_trimmed = WindowManager.trim_windows(window, window_trimmed)
-                self.resource_windows_dict[resource_id] = window_trimmed
+            self.window_manager.update_resource_windows(allocated_resource_windows_dict)
 
             # Append task values
             task_values = {
                 "task_id": task_id,
-                "assigned_resource_id": allocated_resource_windows_dict.keys(),
-                "task_start": allocated_resource_windows_dict[resource_ids[0]][0],
-                "task_end": allocated_resource_windows_dict[resource_ids[0]][1],
+                "assigned_resource_ids": list(allocated_resource_windows_dict.keys()),
+                "task_start": min(
+                    start for start, end in allocated_resource_windows_dict.values()
+                ),
+                "task_end": max(
+                    end for start, end in allocated_resource_windows_dict.values()
+                ),
             }
             self.task_vars[task_id] = task_values
 
