@@ -28,6 +28,9 @@ class SchedulerResult:
 
     def plot_resource_plan(self) -> None:
         df = self.to_dataframe()
+        df = df.explode(["assigned_resource_ids", "task_start", "task_end"])
+        df = df.infer_objects()
+        df = df.dropna()
         # Sort dataframe by assigned_resource_ids and task_start to visualize in order
         df = df.sort_values(["assigned_resource_ids", "task_start"])
 
