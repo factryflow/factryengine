@@ -10,11 +10,15 @@ class TaskAllocator:
         windows = list(resource_windows_dict.values())
         matrix = self.create_matrix(windows)
         resource_ids = np.array(list(resource_windows_dict.keys()))
-        allocated_windows = self.find_earliest_solution(
+        solution_matrix, solution_resource_ids = self.solve_matrix(
             matrix=matrix,
             task_duration=task_duration,
             resource_ids=resource_ids,
             resource_count=resource_count,
+        )
+        # get allocated windows
+        allocated_windows = self._get_resource_intervals(
+            solution_matrix, solution_resource_ids
         )
 
         return allocated_windows
@@ -33,7 +37,7 @@ class TaskAllocator:
 
         return np.stack(matrix, axis=-1)
 
-    def find_earliest_solution(
+    def solve_matrix(
         self,
         matrix: np.array,
         task_duration: float,
@@ -45,9 +49,9 @@ class TaskAllocator:
         the number of resources available. The method uses a matrix representation of
         the resource windows to calculate the optimal allocation of the task.
         """
+
         resource_matrix = matrix[:, 1:]
         if resource_count == 1 and task_duration > resource_matrix.max():
-            print("no soluton found")
             return None
 
         masked_resource_matrix = self._mask_smallest_except_k_largest(
@@ -56,27 +60,22 @@ class TaskAllocator:
 
         arr_sum = np.sum(masked_resource_matrix, axis=1)
         if task_duration > arr_sum.max():
-            print("no soluton found")
             return None
 
+        # get solution index and resource ids
         solution_index = np.argmax(arr_sum >= task_duration)
-        solution_resources = ~masked_resource_matrix.mask[solution_index]
-        solution_cols = np.concatenate([[True], solution_resources])
+        solution_resources_mask = ~masked_resource_matrix.mask[solution_index]
+        solution_resource_ids = resource_ids[solution_resources_mask]
 
-        # solve solution
-        solution_matrix = matrix[: solution_index + 1, solution_cols]
+        # solve matrix
+        solution_cols_mask = np.concatenate([[True], solution_resources_mask])
+        solution_matrix = matrix[: solution_index + 1, solution_cols_mask]
         solution = self._solve_task_end(solution_matrix[-2:], task_duration)
         solution_matrix = np.vstack(
             (solution_matrix[:solution_index], np.atleast_2d(solution))
         )
 
-        # get resource windows
-        resource_ids = np.array(resource_ids)
-        allocated_windows = self._get_resource_intervals(
-            solution_matrix, resource_ids[solution_resources]
-        )
-
-        return allocated_windows
+        return solution_matrix, solution_resource_ids
 
     def _solve_task_end(self, matrix: np.array, task_duration: int) -> np.array:
         # Calculate slopes and intercepts for all columns after the first one directly
@@ -111,6 +110,9 @@ class TaskAllocator:
             return 0
 
     def _get_resource_intervals(self, solution_matrix, resources):
+        """
+        gets the resource intervals from the solution matrix.
+        """
         start_indexes = [
             self._get_window_start_index(resource_arr)
             for resource_arr in solution_matrix[:, 1:].T
@@ -131,11 +133,13 @@ class TaskAllocator:
         """
         Masks the smallest elements in an array, except for the k largest elements on
         each row. This is a helper method used in the finding of the earliest solution.
+        Zeroes are also masked as they are not valid solutions.
         """
         indices = np.argpartition(array, -k, axis=1)
         mask = np.ones_like(array, dtype=bool)
         rows = np.arange(array.shape[0])[:, np.newaxis]
         mask[rows, indices[:, -k:]] = False
+        mask[array == 0] = True
         masked_array = np.ma.masked_array(array, mask=mask)
         return masked_array
 
