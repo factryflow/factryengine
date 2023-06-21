@@ -17,6 +17,21 @@ class WindowManager:
             for resource in self.resources
         }
 
+    def get_task_resource_windows_dict(
+        self, task_resource_ids: list[int], task_earliest_start: int
+    ) -> dict[int, np.ndarray]:
+        """
+        Returns a subset of the resource windows dict for the given resource IDs.
+        The windows are trimmed to the min_task_start.
+        """
+        return {
+            resource_id: self.trim_window(
+                window=self.resource_windows_dict[resource_id],
+                trim_interval=(0, task_earliest_start),
+            )
+            for resource_id in task_resource_ids
+        }
+
     def windows_to_numpy(self, windows: list[tuple[int, int]]) -> np.ndarray:
         """
         Converts a list of windows to a numpy array.
@@ -116,7 +131,7 @@ class WindowManager:
             overlap_windows[1, 2] = (
                 overlap_windows[1, 1] - overlap_windows[1, 0]
             ) * slopes_between
-            overlap_windows[1, 3] = 1
+            overlap_windows[1, 3] = -1
 
             return np.concatenate(
                 (windows[:start_idx], overlap_windows, windows[end_idx:])
@@ -143,7 +158,7 @@ class WindowManager:
                 overlap_windows[mask_end, 1] - overlap_windows[mask_end, 0]
             ) * slopes_end
             end_idx_temp = min(end_idx, windows.shape[0] - 1)  # handle out of bounds
-            windows[end_idx_temp, 3] = 1
+            windows[end_idx_temp, 3] = -1
 
         return windows
 
@@ -164,7 +179,7 @@ class WindowManager:
             overlap_windows[mask_start, 2] = (
                 overlap_windows[mask_start, 1] - overlap_windows[mask_start, 0]
             ) * slopes_start
-            overlap_windows[mask_start, 3] = 1
+            overlap_windows[mask_start, 3] = -1
 
         return windows
 
