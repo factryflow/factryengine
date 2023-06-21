@@ -27,22 +27,25 @@ class HeuristicSolver:
             task = self.task_dict[task_id]
 
             # get task resources and windows dict
-            task_resources = task.get_resources()
-            task_resource_ids = [resource.id for resource in task_resources]
-            task_resource_windows_dict = {
-                id: self.window_manager.resource_windows_dict[id]
-                for id in task_resource_ids
-            }
+            task_resource_ids = [resource.id for resource in task.get_resources()]
+            task_earliest_start = self._get_task_earliest_start(task)
+            task_resource_windows_dict = (
+                self.window_manager.get_task_resource_windows_dict(
+                    task_resource_ids, task_earliest_start
+                )
+            )
 
+            # allocate task
             allocated_resource_windows_dict = self.task_allocator.allocate_task(
                 resource_windows_dict=task_resource_windows_dict,
                 task_duration=task.duration,
                 resource_count=task.resource_count,
             )
-            if allocated_resource_windows_dict is None:
+
+            if not allocated_resource_windows_dict:
                 unscheduled_tasks.append(task_id)
                 continue
-            print(allocated_resource_windows_dict)
+
             # update resource windows
             self.window_manager.update_resource_windows(allocated_resource_windows_dict)
 
@@ -50,15 +53,28 @@ class HeuristicSolver:
             task_values = {
                 "task_id": task_id,
                 "assigned_resource_ids": list(allocated_resource_windows_dict.keys()),
-                "task_start": min(
+                "task_start": [
                     start for start, end in allocated_resource_windows_dict.values()
-                ),
-                "task_end": max(
+                ],
+                "task_end": [
                     end for start, end in allocated_resource_windows_dict.values()
-                ),
+                ],
             }
             self.task_vars[task_id] = task_values
 
         return list(
             self.task_vars.values()
         )  # Return values of the dictionary as a list
+
+    def _get_task_earliest_start(self, task):
+        """
+        Retuns the earliest start of a task based on the latest end of its predecessors.
+        """
+        return max(
+            [
+                start
+                for pred in task.predecessors
+                for start in self.task_vars[pred.id]["task_end"]
+            ],
+            default=0,
+        )
