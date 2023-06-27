@@ -27,38 +27,33 @@ class SchedulerResult:
         return summary
 
     def plot_resource_plan(self) -> None:
-        df = self.to_dataframe()
-        df = df.explode(["assigned_resource_ids", "task_start", "task_end"])
-        df = df.infer_objects()
-        df = df.dropna()
-        # Sort dataframe by assigned_resource_ids and task_start to visualize in order
-        df = df.sort_values(["assigned_resource_ids", "task_start"])
+        df = self.get_resource_intervals_df()
 
         # Create a color dictionary for each unique resource for distinction in the plot
-        resources = df["assigned_resource_ids"].unique()
+        tasks = df["task_id"].unique()
         colors = sns.color_palette(
-            "deep", len(resources)
+            "deep", len(tasks)
         )  # Using seaborn "dark" color palette
-        color_dict = dict(zip(resources, colors))
+        color_dict = dict(zip(tasks, colors))
 
         # Set seaborn style
         sns.set_style("whitegrid")
 
         plt.figure(figsize=(12, 6))
 
-        for resource_id, group_df in df.groupby("assigned_resource_ids"):
+        for task_id, group_df in df.groupby("task_id"):
             for task in group_df.itertuples():
                 plt.barh(
-                    resource_id,
-                    left=task.task_start,
-                    width=task.task_end - task.task_start,
-                    color=color_dict[resource_id],
+                    task.resource_id,
+                    left=task.interval_start,
+                    width=task.interval_end - task.interval_start,
+                    color=color_dict[task_id],
                     edgecolor="black",
                 )
                 plt.text(
-                    x=(task.task_start + task.task_end)
+                    x=(task.interval_start + task.interval_end)
                     / 2,  # x position, in the middle of task bar
-                    y=resource_id,  # y position, on the resource line
+                    y=task.resource_id,  # y position, on the resource line
                     s=task.task_id,  # text string, which is task_id here
                     va="center",  # vertical alignment
                     ha="center",  # horizontal alignment
@@ -69,6 +64,19 @@ class SchedulerResult:
         plt.xlabel("Time")
         plt.ylabel("Resource")
         plt.title("Resource Plan")
-        plt.yticks(df["assigned_resource_ids"].unique())
+        plt.yticks(df["resource_id"].unique())
         plt.tight_layout()  # adjusts subplot params so that the subplot(s) fits into the figure area.
         plt.show()
+
+    def get_resource_intervals_df(self) -> pd.DataFrame:
+        df = self.to_dataframe()
+        df = df.explode(["assigned_resource_ids", "resource_intervals"]).explode(
+            "resource_intervals"
+        )
+        df = df.dropna()
+        df["interval_start"] = df.resource_intervals.apply(lambda x: x[0])
+        df["interval_end"] = df.resource_intervals.apply(lambda x: x[1])
+        df = df.rename(columns={"assigned_resource_ids": "resource_id"})
+        df = df[["task_id", "resource_id", "interval_start", "interval_end"]]
+        df = df.infer_objects()
+        return df
