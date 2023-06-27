@@ -16,6 +16,8 @@ class TaskAllocator:
             resource_ids=resource_ids,
             resource_count=resource_count,
         )
+        if solution_matrix is None:
+            return None
         # get allocated windows
         allocated_windows = self._get_resource_intervals(
             solution_matrix, solution_resource_ids
@@ -52,7 +54,7 @@ class TaskAllocator:
 
         resource_matrix = matrix[:, 1:]
         if resource_count == 1 and task_duration > resource_matrix.max():
-            return None
+            return (None, None)
 
         masked_resource_matrix = self._mask_smallest_except_k_largest(
             resource_matrix, resource_count
@@ -60,7 +62,7 @@ class TaskAllocator:
 
         arr_sum = np.sum(masked_resource_matrix, axis=1)
         if task_duration > arr_sum.max():
-            return None
+            return (None, None)
 
         # get solution index and resource ids
         solution_index = np.argmax(arr_sum >= task_duration)
@@ -102,6 +104,9 @@ class TaskAllocator:
         return result
 
     def _get_window_start_index(self, arr):
+        """
+        returns the index of the first non-zero element in an array from the end.
+        """
         zero_indices = np.nonzero(arr == 0)  # Find the indices of zeros from the end
 
         if zero_indices[0].size > 0:
@@ -118,16 +123,32 @@ class TaskAllocator:
             for resource_arr in solution_matrix[:, 1:].T
         ]
         end_index = solution_matrix.shape[0] - 1
+
         resource_windows_dict = {
             resource_id: (
-                round(solution_matrix[start_index][0], 2),
-                round(solution_matrix[end_index][0], 2),
+                self._split_intervals(solution_matrix[start_index:, [0, i + 1]])
             )
-            for resource_id, start_index in zip(resources, start_indexes)
+            for i, (resource_id, start_index) in enumerate(
+                zip(resources, start_indexes)
+            )
             if start_index < end_index
         }
-
         return resource_windows_dict
+
+    def _split_intervals(self, arr):
+        """
+        splits an array into intervals based on the values in the second column.
+        Splitting is done when the value in the second column does not change.
+        """
+        diff = np.diff(arr[:, 1])
+        indices = np.where(diff == 0)[0]
+        splits = np.split(arr[:, 0], indices + 1)
+        intervals = [
+            (round(np.min(split), 2), round(np.max(split), 2))
+            for split in splits
+            if split.size > 1
+        ]
+        return intervals
 
     def _mask_smallest_except_k_largest(self, array, k) -> np.ma.core.MaskedArray:
         """

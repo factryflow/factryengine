@@ -25,11 +25,15 @@ class WindowManager:
         The windows are trimmed to the min_task_start.
         """
         return {
-            resource_id: self.trim_window(
-                window=self.resource_windows_dict[resource_id],
-                trim_interval=(0, task_earliest_start),
-            )
+            resource_id: trimmed_window
             for resource_id in task_resource_ids
+            if (
+                trimmed_window := self.trim_window(
+                    window=self.resource_windows_dict[resource_id],
+                    trim_interval=(0, task_earliest_start),
+                )
+            ).size
+            > 0
         }
 
     def windows_to_numpy(self, windows: list[tuple[int, int]]) -> np.ndarray:
@@ -40,7 +44,7 @@ class WindowManager:
         return np.concatenate([arr, np.diff(arr), np.zeros((arr.shape[0], 1))], axis=1)
 
     def update_resource_windows(
-        self, allocated_resource_windows_dict: dict[int, tuple[int, int]]
+        self, allocated_resource_windows_dict: dict[int, list[tuple[int, int]]]
     ) -> None:
         """
         Removes the task interaval from the resource windows
