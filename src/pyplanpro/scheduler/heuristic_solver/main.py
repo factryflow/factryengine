@@ -1,3 +1,5 @@
+import numpy as np
+
 from .task_allocator import TaskAllocator
 from .task_graph import TaskGraph
 from .window_manager import WindowManager
@@ -14,6 +16,7 @@ class HeuristicSolver:
                 "assigned_resource_ids": None,
                 "task_start": None,
                 "task_end": None,
+                "resource_intervals": None,
             }
             for task in tasks
         }
@@ -34,6 +37,9 @@ class HeuristicSolver:
                     task_resource_ids, task_earliest_start
                 )
             )
+            if not task_resource_windows_dict:
+                unscheduled_tasks.append(task_id)
+                continue
 
             # allocate task
             allocated_resource_windows_dict = self.task_allocator.allocate_task(
@@ -46,19 +52,22 @@ class HeuristicSolver:
                 unscheduled_tasks.append(task_id)
                 continue
 
+            resource_windows_min_max = self.min_max_dict_np(
+                allocated_resource_windows_dict
+            )
+
             # update resource windows
-            self.window_manager.update_resource_windows(allocated_resource_windows_dict)
+            self.window_manager.update_resource_windows(resource_windows_min_max)
 
             # Append task values
             task_values = {
                 "task_id": task_id,
                 "assigned_resource_ids": list(allocated_resource_windows_dict.keys()),
-                "task_start": [
-                    start for start, end in allocated_resource_windows_dict.values()
-                ],
-                "task_end": [
-                    end for start, end in allocated_resource_windows_dict.values()
-                ],
+                "task_start": min(
+                    start for start, _ in resource_windows_min_max.values()
+                ),
+                "task_end": max(end for _, end in resource_windows_min_max.values()),
+                "resource_intervals": allocated_resource_windows_dict.values(),
             }
             self.task_vars[task_id] = task_values
 
@@ -71,10 +80,17 @@ class HeuristicSolver:
         Retuns the earliest start of a task based on the latest end of its predecessors.
         """
         return max(
-            [
-                start
-                for pred in task.predecessors
-                for start in self.task_vars[pred.id]["task_end"]
-            ],
+            [self.task_vars[pred.id]["task_end"] for pred in task.predecessors],
             default=0,
         )
+
+    def min_max_dict_np(self, d):
+        result = {}
+
+        for key, value_list in d.items():
+            min_val = np.min([x[0] for x in value_list])
+            max_val = np.max([x[1] for x in value_list])
+            result[key] = (min_val, max_val)
+
+        return result
+        return result
