@@ -80,7 +80,10 @@ class HeuristicSolver:
         Retuns the earliest start of a task based on the latest end of its predecessors.
         """
         return max(
-            [self.task_vars[pred.id]["task_end"] for pred in task.predecessors],
+            [
+                self.task_vars[pred.id]["task_end"] + task.predecessor_delay
+                for pred in task.predecessors
+            ],
             default=0,
         )
 
