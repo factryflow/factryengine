@@ -8,6 +8,8 @@ class Scheduler:
         self.resources = set(
             [resource for task in tasks for resource in task.get_resources()]
         )
+        for resource in self.resources:
+            resource.merge_intervals()
 
     def schedule(self):
         heuristic_solver = HeuristicSolver(self.tasks, self.resources)
