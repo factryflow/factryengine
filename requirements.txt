@@ -1,6 +1,7 @@
-ortools
-intervaltree
+numpy
 networkx
 pandas
 pydantic
 seaborn
+matplotlib
+```
