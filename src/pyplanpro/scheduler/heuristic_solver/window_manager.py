@@ -61,6 +61,7 @@ class WindowManager:
         """
         Trims the provided windows based on the provided trim window.
         """
+        window = window.copy()
         trim_start, trim_end = trim_interval
 
         start_idx = np.searchsorted(window[:, 1], trim_start, side="right")
