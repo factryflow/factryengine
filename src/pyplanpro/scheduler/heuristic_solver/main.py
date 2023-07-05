@@ -32,6 +32,11 @@ class HeuristicSolver:
             # get task resources and windows dict
             task_resource_ids = [resource.id for resource in task.get_resources()]
             task_earliest_start = self._get_task_earliest_start(task)
+
+            if task_earliest_start is None:
+                unscheduled_tasks.append(task_id)
+                continue
+
             task_resource_windows_dict = (
                 self.window_manager.get_task_resource_windows_dict(
                     task_resource_ids, task_earliest_start
@@ -79,13 +84,14 @@ class HeuristicSolver:
         """
         Retuns the earliest start of a task based on the latest end of its predecessors.
         """
-        return max(
-            [
-                self.task_vars[pred.id]["task_end"] + task.predecessor_delay
-                for pred in task.predecessors
-            ],
-            default=0,
-        )
+        task_ends = []
+        for pred in task.predecessors:
+            task_end = self.task_vars[pred.id]["task_end"]
+            if task_end is None:
+                return None
+            task_ends.append(task_end + task.predecessor_delay)
+
+        return max(task_ends, default=0)
 
     def min_max_dict_np(self, d):
         result = {}
