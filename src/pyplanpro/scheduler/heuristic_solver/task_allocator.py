@@ -5,7 +5,11 @@ import numpy as np
 
 class TaskAllocator:
     def allocate_task(
-        self, resource_windows_dict: np.array, task_duration: float, resource_count: int
+        self,
+        resource_windows_dict: np.array,
+        task_duration: float,
+        resource_count: int,
+        resource_group_indices: list[list[int]],
     ) -> Optional[dict[int, np.array]]:
         windows = list(resource_windows_dict.values())
         matrix = self.create_matrix(windows)
@@ -15,6 +19,7 @@ class TaskAllocator:
             task_duration=task_duration,
             resource_ids=resource_ids,
             resource_count=resource_count,
+            resource_group_indices=resource_group_indices,
         )
         if solution_matrix is None:
             return None
@@ -45,6 +50,7 @@ class TaskAllocator:
         task_duration: float,
         resource_ids: np.array,
         resource_count=1,
+        resource_group_indices=list[list[int]],
     ) -> Optional[dict[int, np.array]]:
         """
         Finds the earliest possible solution for a given task based on its duration and
@@ -56,6 +62,13 @@ class TaskAllocator:
         if resource_count == 1 and task_duration > resource_matrix.max():
             return (None, None)
 
+        # mask all but the largest group per row if there are multiple groups
+        if len(resource_group_indices) > 1:
+            resource_matrix = self._fill_array_except_largest_group_per_row(
+                resource_matrix, resource_group_indices
+            )
+
+        # mask all but the k largest elements per row
         masked_resource_matrix = self._mask_smallest_except_k_largest(
             resource_matrix, resource_count
         )
@@ -163,6 +176,41 @@ class TaskAllocator:
         mask[array == 0] = True
         masked_array = np.ma.masked_array(array, mask=mask)
         return masked_array
+
+    def _fill_array_except_largest_group_per_row(
+        self, array, group_indices=list[list[int, int]]
+    ) -> np.array:
+        """
+        Returns an array where all elements in each row are filled with zero except
+        those in the group (set of columns) with the largest sum. Groups are defined by
+        a list of lists, each inner list containing the indices of columns in that
+        group. Originally zero elements and those not in the largest sum group are
+        filled withzeros.
+        """
+        num_rows = array.shape[0]
+        # Initialize mask with all True (masked)
+        mask = np.ones_like(array, dtype=bool)
+
+        # Iterate over each row in the array
+        for i in range(num_rows):
+            row = array[i]
+            # Calculate the sums for each group in the row
+            group_sums = [np.sum(row[group]) for group in group_indices]
+            # Find the indices of the group with the largest sum
+            largest_group = group_indices[np.argmax(group_sums)]
+            # Unmask (False) the elements in the largest group
+            mask[i, largest_group] = False
+
+        # Ensure all zeros in the array are masked
+        mask[array == 0] = True
+
+        # Apply the mask to the array
+        masked_array = np.ma.masked_array(array, mask=mask)
+
+        # Fill masked values with zeros
+        filled_array = masked_array.filled(0)
+
+        return filled_array
 
     def _cumsum_reset_at_minus_one(self, a) -> np.ndarray:
         """

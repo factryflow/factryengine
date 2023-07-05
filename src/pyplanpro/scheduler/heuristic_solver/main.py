@@ -51,6 +51,7 @@ class HeuristicSolver:
                 resource_windows_dict=task_resource_windows_dict,
                 task_duration=task.duration,
                 resource_count=task.resource_count,
+                resource_group_indices=task.get_resource_group_indices(),
             )
 
             if not allocated_resource_windows_dict:

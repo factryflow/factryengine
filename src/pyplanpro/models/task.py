@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, validator
 
@@ -10,7 +10,7 @@ class Task(BaseModel):
     duration: int
     priority: int
     resources: list[list[Resource]]
-    resource_count: int = 1
+    resource_count: Union[int, str] = 1
     predecessors: Optional[list["Task"]] = []
     predecessor_delay: int = 0
 
@@ -28,3 +28,25 @@ class Task(BaseModel):
         return [
             resource for resource_list in self.resources for resource in resource_list
         ]
+
+    def get_resource_group_count(self):
+        return len(self.resources)
+
+    def get_resource_group_indices(self) -> list[list[int]]:
+        return [
+            list(range(i * len(group), (i + 1) * len(group)))
+            for i, group in enumerate(self.resources)
+        ]
+
+    @validator("resource_count", always=True)
+    def set_resource_count(cls, v, values):
+        if isinstance(v, str) and v.lower() == "all":
+            if "resources" in values:
+                return max(
+                    len(resource_group) for resource_group in values["resources"]
+                )
+
+        elif isinstance(v, int):
+            return v
+        else:
+            raise ValueError("Invalid value for resource_count.")
