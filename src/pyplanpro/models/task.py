@@ -1,3 +1,4 @@
+from itertools import count
 from typing import Optional, Union
 
 from pydantic import BaseModel, validator
@@ -33,10 +34,11 @@ class Task(BaseModel):
         return len(self.resources)
 
     def get_resource_group_indices(self) -> list[list[int]]:
-        return [
-            list(range(i * len(group), (i + 1) * len(group)))
-            for i, group in enumerate(self.resources)
-        ]
+        """
+        returns a list of lists of indices of resources in each resource group
+        """
+        counter = count()
+        return [[next(counter) for _ in sublist] for sublist in self.resources]
 
     @validator("resource_count", always=True)
     def set_resource_count(cls, v, values):

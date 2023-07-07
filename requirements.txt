@@ -4,4 +4,4 @@ pandas
 pydantic
 seaborn
 matplotlib
-```
+itertools
