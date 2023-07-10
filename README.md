@@ -1,62 +1,62 @@
-# PyPlanPro
+# PlanBee 🐝
 
-**UNDER CONSTRUCTION**
+If Plan A fails, dont worry there is always PlanBee! PlanBee is a Job Shop Scheduling algorithm module buzzing with features. Feed PlanBee with your tasks and resources and it quickly finds a solution. It employs the high-speed computation power of NumPy to achieve fast results. With PlanBee, Plan B becomes your Plan A!
 
-This project is currently under construction and is not yet ready for use. We are working hard to bring you a great project, and will update this README as soon as it's ready for use. Thank you for your patience!
+## Features 🚀
 
-In the meantime, feel free to check out the project code and contribute if you'd like. We welcome any feedback or suggestions you may have. 
+- Define your own tasks and resources.
+- Specify available windows for each resource.
+- Indicate priority, duration, and necessary resources for each task.
+- Solve your scheduling problems with a single function call!
+- Get a detailed summary and visualization of the scheduling solution.
 
-This Python program is a task scheduler that takes a set of tasks and assigns them to resources within their respective resource groups. The program uses Google OR-Tools library to build a constraint programming model and solve it, minimizing the makespan of the tasks.
+## Installation 🛠️
 
-## Features
-Define tasks with duration, priority, and resource groups
-Define resources with availability slots
-Schedule tasks to resources within their respective resource groups, minimizing the makespan
-Output the optimal or feasible schedule if found
-## Requirements
-To run this program, you need to have the following packages installed:
+```sh
+pip install planbee
+```
 
-Python 3.6 or later
-ortools (pip install ortools)
+## Usage 🐍
 
-## Installation
+First, import the necessary modules:
+
 ```python
-pip install pyplanpro
+from PlanBee import Resource, Task, Scheduler
 ```
-## Usage
-1. Import the necessary classes and functions:
+
+Then, define your resources:
+
 ```python
-from pyplanpro import Resource, ResourceGroup, Task, Scheduler
+resource1 = Resource(id=1, available_windows=[(0, 10), (15, 20)])
+resource2 = Resource(id=2, available_windows=[(5, 20)])
 ```
-2. Define resources and resource groups:
+
+And your tasks:
+
 ```python
-r1_availability_slots = [
-     {"slot_id" : 0, "start":0, "end":4},
-     {"slot_id" : 1, "start":5, "end":10}
-]
-r2_availability_slots = [
-     {"slot_id" : 0, "start":0, "end":10}
-]
-resource1 = Resource(id=1, availability_slots=r1_availability_slots)
-resource2 = Resource(id=2, availability_slots=r2_availability_slots)
-resource_group = ResourceGroup(id=1, resources=[resource1, resource2])
+task1 = Task(id=1, duration=5, priority=1, resources=[resource1, resource2], resource_count=1)
+task2 = Task(id=2, duration=3, priority=2, resources=[resource1], predecessors=[task1], resource_count=1)
 ```
-3. Define tasks with duration, and resource group:
+
+Finally, use the Scheduler to solve:
+
 ```python
-tasks = [Task(id=1, duration=3, resource_group=resource_group)]
+scheduler = Scheduler(tasks=[task1, task2])
+result = scheduler.schedule()
 ```
-4. Set the scheduling horizon:
+
+## Visualization 📊
+
+PlanBee provides a function to plot your schedule:
+
 ```python
-horizon = 50
+result.plot_resource_plan()
 ```
-5. Call the Scheduler function with tasks and horizon:
-```python
-s = Scheduler()
-s.schedule(tasks, horizon= horizon)
-```
-If a solution is found, the program will print the optimal or feasible schedule with makespan, resource assignments, task start and end times, and durations.
-```
-Makespan = 8.0
-Assigned to resource 2
-Task (0, 0): starts: 0, end: 8, duration: 8
-```
+
+## Contributions 💡
+
+Contributions are always welcome! See `CONTRIBUTING.md` for ways to get started.
+
+## License 📄
+
+This project is licensed under the terms of the [MIT license](LICENSE.md).
