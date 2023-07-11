@@ -23,7 +23,7 @@ jobs:
 
       - name: Build package
         run: |
-          cd /home/runner/work/PlanBee/
+          cd ${{ github.workspace }}
           python setup.py --version ${{ steps.extract_version.outputs.version }} sdist bdist_wheel
 
       - name: Publish to PyPI
