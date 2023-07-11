@@ -22,7 +22,11 @@ jobs:
         run: echo ::set-output name=version::${{ github.ref }}
 
       - name: Build package
-        run: python setup.py --version ${{ steps.extract_version.outputs.version }} sdist bdist_wheel
+        working-directory: ${{ github.workspace }}
+        run: |
+          version=$(echo "${{ github.ref }}" | sed -e 's/refs\/tags\///')
+          python setup.py --version $version sdist bdist_wheel
+          echo "::set-env name=PKG_VERSION::$version"
 
       - name: Publish to PyPI
         env:
