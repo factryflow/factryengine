@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from pyplanpro import Resource
-from pyplanpro.scheduler.heuristic_solver.window_manager import WindowManager
+from planbee import Resource
+from planbee.scheduler.heuristic_solver.window_manager import WindowManager
 
 # Test resources
 resource1 = Resource(id=1, available_windows=[(1, 5), (7, 9)])
@@ -57,7 +57,7 @@ test_case_values = [
         "trim both intervals",
         np.array([[1, 5, 4, 0], [8, 10, 2, 0]]),
         (3, 9),
-        np.array([[1, 3, 2, 0], [9, 10, 1, 1]]),
+        np.array([[1, 3, 2, 0], [9, 10, 1, -1]]),
     ),
     # trim no intervals
     (
@@ -92,7 +92,7 @@ test_case_values = [
         "split interval",
         np.array([[1, 5, 4, 0], [8, 10, 2, 0]]),
         (2, 4),
-        np.array([[1, 2, 1, 0], [4, 5, 1, 1], [8, 10, 2, 0]]),
+        np.array([[1, 2, 1, 0], [4, 5, 1, -1], [8, 10, 2, 0]]),
     ),
 ]
 

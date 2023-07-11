@@ -234,7 +234,11 @@ class TaskAllocator:
 
         return result
 
-    def _expand_array(self, arr, new_boundaries):
+    def _expand_array(self, arr: np.ndarray, new_boundaries: np.ndarray) -> np.ndarray:
+        """
+        Expands an array with new boundaries and calculates the corresponding durations
+        using linear interpolation.
+        """
         new_boundaries = np.asarray(new_boundaries)
 
         # Only keep the boundaries that are not already in the array and within the
