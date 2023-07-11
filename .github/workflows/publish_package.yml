@@ -22,7 +22,9 @@ jobs:
         run: echo ::set-output name=version::${{ github.ref }}
 
       - name: Build package
-        run: python setup.py --version ${{ steps.extract_version.outputs.version }} sdist bdist_wheel
+        run: |
+          cd /home/runner/work/PlanBee/
+          python setup.py --version ${{ steps.extract_version.outputs.version }} sdist bdist_wheel
 
       - name: Publish to PyPI
         env:
