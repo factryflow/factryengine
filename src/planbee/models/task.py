@@ -7,13 +7,16 @@ from .resource import Resource
 
 
 class Task(BaseModel):
-    id: int
+    id: Union[int, str]
     duration: int
     priority: int
     resources: list[list[Resource]]
     resource_count: Union[int, str] = 1
     predecessors: Optional[list["Task"]] = []
     predecessor_delay: int = 0
+    batch_size: Optional[int] = None
+    quantity: Optional[int] = None
+    batch_id: Optional[int] = None
 
     @validator("resources", pre=True)
     def ensure_list(cls, v):
