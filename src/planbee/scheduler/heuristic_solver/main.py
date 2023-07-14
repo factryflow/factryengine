@@ -1,14 +1,13 @@
 import numpy as np
 
 from .task_allocator import TaskAllocator
-from .task_graph import TaskGraph
 from .window_manager import WindowManager
 
 
 class HeuristicSolver:
-    def __init__(self, tasks, resources):
+    def __init__(self, tasks, resources, task_order):
         self.task_allocator = TaskAllocator()
-        self.task_graph = TaskGraph(tasks)
+        self.task_order = task_order
         self.window_manager = WindowManager(resources)
         self.task_vars = {
             task.id: {
@@ -23,32 +22,33 @@ class HeuristicSolver:
         self.task_dict = {task.id: task for task in tasks}
 
     def solve(self):
-        task_order = self.task_graph.get_task_order()
         unscheduled_tasks = []
 
-        for task_id in task_order:
+        for task_id in self.task_order:
             task = self.task_dict[task_id]
 
             # get task resources and windows dict
-            task_resource_ids = [resource.id for resource in task.get_resources()]
+            task_resource_ids = np.array(
+                [resource.id for resource in task.get_resources()]
+            )
+
             task_earliest_start = self._get_task_earliest_start(task)
 
             if task_earliest_start is None:
                 unscheduled_tasks.append(task_id)
                 continue
 
-            task_resource_windows_dict = (
-                self.window_manager.get_task_resource_windows_dict(
-                    task_resource_ids, task_earliest_start
-                )
+            task_resource_windows = self.window_manager.get_task_resource_windows(
+                task_resource_ids, task_earliest_start
             )
-            if not task_resource_windows_dict:
+            if not task_resource_windows:
                 unscheduled_tasks.append(task_id)
                 continue
 
             # allocate task
             allocated_resource_windows_dict = self.task_allocator.allocate_task(
-                resource_windows_dict=task_resource_windows_dict,
+                resource_windows=task_resource_windows,
+                resource_ids=task_resource_ids,
                 task_duration=task.duration,
                 resource_count=task.resource_count,
                 resource_group_indices=task.get_resource_group_indices(),
@@ -102,5 +102,4 @@ class HeuristicSolver:
             max_val = np.max([x[1] for x in value_list])
             result[key] = (min_val, max_val)
 
-        return result
         return result

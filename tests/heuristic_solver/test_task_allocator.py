@@ -9,12 +9,14 @@ def task_allocator():
 
 
 def test_allocate_task_returns_expected_result(task_allocator):
-    resource_windows_dict = {1: np.array([[0, 1, 1, -1], [2, 3, 1, 0]])}
+    resource_windows = [np.array([[0, 1, 1, -1], [2, 3, 1, 0]])]
+    resource_ids = np.array([1])
     task_duration = 2
     resource_count = 1
     resource_group_indices = [[0]]
     result = task_allocator.allocate_task(
-        resource_windows_dict=resource_windows_dict,
+        resource_windows=resource_windows,
+        resource_ids=resource_ids,
         task_duration=task_duration,
         resource_count=resource_count,
         resource_group_indices=resource_group_indices,
@@ -28,12 +30,17 @@ def test_allocate_task_returns_expected_result(task_allocator):
 
 
 def test_allocate_task_returns_none_when_no_solution(task_allocator):
-    resource_windows_dict = {1: np.array([[0, 1, 1, 0], [2, 4, 2, -1]])}
+    resource_windows = [np.array([[0, 1, 1, -1], [2, 3, 1, 0]])]
+    resource_ids = np.array([1])
     task_duration = 4
     resource_count = 1
     resource_group_indices = [[0]]
     result = task_allocator.allocate_task(
-        resource_windows_dict, task_duration, resource_count, resource_group_indices
+        resource_windows=resource_windows,
+        resource_ids=resource_ids,
+        task_duration=task_duration,
+        resource_count=resource_count,
+        resource_group_indices=resource_group_indices,
     )
     assert result is None
 

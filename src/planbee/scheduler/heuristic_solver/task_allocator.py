@@ -6,14 +6,14 @@ import numpy as np
 class TaskAllocator:
     def allocate_task(
         self,
-        resource_windows_dict: np.array,
+        resource_windows: list[np.array],
+        resource_ids: np.array,
         task_duration: float,
         resource_count: int,
         resource_group_indices: list[list[int]],
     ) -> Optional[dict[int, np.array]]:
-        windows = list(resource_windows_dict.values())
-        matrix = self.create_matrix(windows)
-        resource_ids = np.array(list(resource_windows_dict.keys()))
+        matrix = self.create_matrix(resource_windows)
+
         solution_matrix, solution_resource_ids = self.solve_matrix(
             matrix=matrix,
             task_duration=task_duration,

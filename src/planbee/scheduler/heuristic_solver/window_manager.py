@@ -17,15 +17,15 @@ class WindowManager:
             for resource in self.resources
         }
 
-    def get_task_resource_windows_dict(
+    def get_task_resource_windows(
         self, task_resource_ids: list[int], task_earliest_start: int
-    ) -> dict[int, np.ndarray]:
+    ) -> list[np.ndarray]:
         """
-        Returns a subset of the resource windows dict for the given resource IDs.
+        Returns the resource windows for the resource ids.
         The windows are trimmed to the min_task_start.
         """
-        return {
-            resource_id: trimmed_window
+        return [
+            trimmed_window
             for resource_id in task_resource_ids
             if (
                 trimmed_window := self.trim_window(
@@ -34,7 +34,7 @@ class WindowManager:
                 )
             ).size
             > 0
-        }
+        ]
 
     def windows_to_numpy(self, windows: list[tuple[int, int]]) -> np.ndarray:
         """
