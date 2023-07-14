@@ -10,7 +10,7 @@ class Task(BaseModel):
     id: Union[int, str]
     duration: int
     priority: int
-    resources: list[list[Resource]]
+    resources: list[set[Resource]]
     resource_count: Union[int, str] = 1
     predecessors: Optional[list["Task"]] = []
     predecessor_delay: int = 0
