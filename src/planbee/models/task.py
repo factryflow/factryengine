@@ -16,7 +16,11 @@ class Task(BaseModel):
     predecessor_delay: int = Field(0, gt=0)
     batch_size: Optional[int] = Field(None, gt=0)
     quantity: Optional[int] = Field(None, gt=0)
-    _batch_id: Optional[int] = PrivateAttr()
+    _batch_id: Optional[int] = PrivateAttr(1)
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self.id}-{self.batch_id}"
 
     @property
     def batch_id(self):
