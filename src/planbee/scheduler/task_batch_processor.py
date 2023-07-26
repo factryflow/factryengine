@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import networkx as nx
 
@@ -11,44 +11,61 @@ class TaskBatchProcessor:
     The TaskBatchProcessor class is responsible for preprocessing tasks.
     """
 
-    def __init__(self, task_graph: nx.DiGraph, task_dict: Dict[int, Task]):
+    def __init__(self, task_graph: nx.DiGraph, task_dict: Dict[str, Task]):
         self.task_graph = task_graph
         self.task_dict = task_dict
 
-    def split_tasks_into_batches(self) -> Dict[Tuple[int, int], Task]:
-        # Perform a topological sort to get an ordering of nodes
-        task_dict = deepcopy(self.task_dict)
+    def split_tasks_into_batches(self) -> Dict[int | str, Task]:
+        """
+        This function performs splitting of tasks into batches if necessary and returns
+        an updated task dictionary with possibly split tasks. Tasks are split only if
+        they have a batch size and the quantity is greater than the batch size.
+        """
+        task_dict_copy = deepcopy(self.task_dict)
 
-        # Perform a topological sort to get an ordering of nodes
+        # get the order of tasks based on their dependencies
         task_order = list(nx.topological_sort(self.task_graph))
 
-        # Iterate over the sorted tasks
-        for task_id in task_order:
-            task = self.task_dict[task_id]
-            if task.batch_size > 0:
-                # get successor tasks
-                successor_tasks = [
-                    self.task_dict[successor_id]
-                    for successor_id in list(self.task_graph.successors(task_id))
-                ]
+        for task_uid in task_order:
+            current_task = self.task_dict[task_uid]
+            # Skip the current iteration if the task doesn't have a batch size or qty
+            if current_task.batch_size is None or current_task.quantity is None:
+                continue
 
-                # split task
+            # Check if the task needs to be split into batches
+            if (
+                current_task.batch_size > 0
+                and current_task.quantity > current_task.batch_size
+            ):
+                successor_tasks = self._get_successor_tasks(task_uid)
+
+                # split current task into batches
                 task_splits = self._split_task_by_batch(
-                    task=task, successor_tasks=successor_tasks
+                    task=current_task, successor_tasks=successor_tasks
                 )
 
-                # update task_dict
-                for split_task in task_splits:
-                    task_dict[(split_task.id, split_task.batch_id)] = split_task
+                # remove the current task from the task dictionary
+                del task_dict_copy[task_uid]
 
-        return task_dict
+                # add the split tasks to the task dictionary
+                for split_task in task_splits:
+                    task_dict_copy[split_task.uid] = split_task
+
+        return task_dict_copy
+
+    def _get_successor_tasks(self, task_uid):
+        """
+        Given a task_uid, this function returns the list of successor tasks.
+        """
+        successor_ids = list(self.task_graph.successors(task_uid))
+        return [self.task_dict[successor_id] for successor_id in successor_ids]
 
     def _split_task_by_batch(
         self, task: Task, successor_tasks: Optional[List[Task]] = None
     ) -> List[Task]:
-        """Splits a task into batches and updates the successor tasks' predecessors."""
-        if task.batch_size is None or task.batch_size > task.quantity:
-            return [task]
+        """
+        Splits a task into batches and updates the successor tasks' predecessors.
+        """
 
         batches = self._create_batches(task)
 
@@ -88,5 +105,6 @@ class TaskBatchProcessor:
         """Creates a new task with the given batch_id and quantity."""
         new_task = task.copy(deep=True)
         new_task.quantity = quantity
-        new_task.batch_id = batch_id
+        new_task.duration = (quantity / task.quantity) * task.duration
+        new_task.set_batch_id(batch_id)
         return new_task
