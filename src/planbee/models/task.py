@@ -1,5 +1,4 @@
 from itertools import count
-from typing import Optional, Union
 
 from pydantic import BaseModel, Field, PrivateAttr, validator
 
@@ -7,30 +6,33 @@ from .resource import Resource
 
 
 class Task(BaseModel):
-    id: Union[int, str]
-    duration: int = Field(..., gt=0)
-    priority: int = Field(..., gt=0)
+    id: int | str
+    duration: int = Field(gt=0)
+    priority: int = Field(gt=0)
     resources: list[set[Resource]]
-    resource_count: Union[int, str] = 1
-    predecessors: Optional[list["Task"]] = []
+    resource_count: int | str = 1
+    predecessors: list["Task"] = []
     predecessor_delay: int = Field(0, gt=0)
-    batch_size: Optional[int] = Field(None, gt=0)
-    quantity: Optional[int] = Field(None, gt=0)
-    _batch_id: Optional[int] = PrivateAttr(1)
+    batch_size: int = Field(None, gt=0)
+    quantity: int = Field(None, gt=0)
+    _batch_id: int = PrivateAttr(None)
 
     @property
-    def unique_id(self) -> str:
-        return f"{self.id}-{self.batch_id}"
+    def uid(self) -> str:
+        """returns the unique id of the task"""
+        if self.batch_id is None:
+            return str(self.id)
+        else:
+            return f"{self.id}-{self.batch_id}"
 
     @property
     def batch_id(self):
+        """returns the batch id of the task"""
         return self._batch_id
-
-    def set_batch_id(self, batch_id):
-        self._batch_id = batch_id
 
     @validator("resources", pre=True)
     def ensure_list(cls, v):
+        """ensures that the resources are in the form of a list of lists"""
         if not isinstance(v, list):  # if a single resource object is passed
             return [[v]]  # make it a list of list
         if (
@@ -39,13 +41,12 @@ class Task(BaseModel):
             return [v]  # make it a list of list
         return v  # if a list of lists is passed, return as it is
 
-    def get_resources(self):
-        return [
-            resource for resource_list in self.resources for resource in resource_list
-        ]
-
     @validator("resource_count", always=True)
     def set_resource_count(cls, v, values):
+        """
+        sets the resource count of the task. If resource_count is set to "all", it is
+        set to the maximum number of resources in any resource group
+        """
         if isinstance(v, str) and v.lower() == "all":
             if "resources" in values:
                 return max(
@@ -57,7 +58,18 @@ class Task(BaseModel):
         else:
             raise ValueError("Invalid value for resource_count.")
 
+    def set_batch_id(self, batch_id):
+        """sets the batch id of the task"""
+        self._batch_id = batch_id
+
+    def get_resources(self):
+        """returns a list of all resources required for the task"""
+        return [
+            resource for resource_list in self.resources for resource in resource_list
+        ]
+
     def get_resource_group_count(self):
+        """returns the number of resource groups required for the task"""
         return len(self.resources)
 
     def get_resource_group_indices(self) -> list[list[int]]:
