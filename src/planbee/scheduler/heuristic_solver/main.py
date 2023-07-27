@@ -93,7 +93,7 @@ class HeuristicSolver:
         """
         task_ends = []
         for pred in task.predecessors:
-            task_end = self.task_vars[pred.id]["task_end"]
+            task_end = self.task_vars[pred.uid]["task_end"]
             if task_end is None:
                 return None
             task_ends.append(task_end + task.predecessor_delay)
