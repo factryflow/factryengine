@@ -30,6 +30,14 @@ class Task(BaseModel):
         """returns the batch id of the task"""
         return self._batch_id
 
+    def __hash__(self):
+        return hash(self.uid)
+
+    def __eq__(self, other):
+        if isinstance(other, Task):
+            return self.uid == other.uid
+        return False
+
     @validator("resources", pre=True)
     def ensure_list(cls, v):
         """ensures that the resources are in the form of a list of lists"""
@@ -78,3 +86,14 @@ class Task(BaseModel):
         """
         counter = count()
         return [[next(counter) for _ in sublist] for sublist in self.resources]
+
+    def is_splittable(self):
+        """
+        Checks if the task is splittable into batches.
+        """
+        return (
+            self.batch_size is not None
+            and self.quantity is not None
+            and self.batch_size > 0
+            and self.quantity > self.batch_size
+        )
