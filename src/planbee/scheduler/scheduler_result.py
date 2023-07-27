@@ -8,7 +8,7 @@ class SchedulerResult:
     def __init__(self, task_vars):
         self.task_vars = task_vars
         self.unscheduled_tasks = [
-            task["task_id"]
+            task["task_uid"]
             for task in self.task_vars
             if task["assigned_resource_ids"] is None
         ]
@@ -30,7 +30,7 @@ class SchedulerResult:
         df = self.get_resource_intervals_df()
 
         # Create a color dictionary for each unique resource for distinction in the plot
-        tasks = df["task_id"].unique()
+        tasks = df["task_uid"].unique()
         colors = sns.color_palette(
             "deep", len(tasks)
         )  # Using seaborn "dark" color palette
@@ -41,20 +41,20 @@ class SchedulerResult:
 
         plt.figure(figsize=(12, 6))
 
-        for task_id, group_df in df.groupby("task_id"):
+        for task_uid, group_df in df.groupby("task_uid"):
             for task in group_df.itertuples():
                 plt.barh(
                     task.resource_id,
                     left=task.interval_start,
                     width=task.interval_end - task.interval_start,
-                    color=color_dict[task_id],
+                    color=color_dict[task_uid],
                     edgecolor="black",
                 )
                 plt.text(
                     x=(task.interval_start + task.interval_end)
                     / 2,  # x position, in the middle of task bar
                     y=task.resource_id,  # y position, on the resource line
-                    s=task.task_id,  # text string, which is task_id here
+                    s=task.task_uid,  # text string, which is task_uid here
                     va="center",  # vertical alignment
                     ha="center",  # horizontal alignment
                     color="black",  # text color
@@ -77,6 +77,6 @@ class SchedulerResult:
         df["interval_start"] = df.resource_intervals.apply(lambda x: x[0])
         df["interval_end"] = df.resource_intervals.apply(lambda x: x[1])
         df = df.rename(columns={"assigned_resource_ids": "resource_id"})
-        df = df[["task_id", "resource_id", "interval_start", "interval_end"]]
+        df = df[["task_uid", "resource_id", "interval_start", "interval_end"]]
         df = df.infer_objects()
         return df

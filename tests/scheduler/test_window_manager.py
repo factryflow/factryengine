@@ -52,6 +52,20 @@ def test_windows_to_numpy(windows, expected_output):
 
 # # Test case values
 test_case_values = [
+    # trim end
+    (
+        "trim end",
+        np.array([[1, 5, 4, 0], [8, 10, 2, 0]]),
+        (4, 8),
+        np.array([[1, 4, 3, 0], [8, 10, 2, -1]]),
+    ),
+    # trim start
+    (
+        "trim start",
+        np.array([[1, 5, 4, 0], [8, 10, 2, 0]]),
+        (0, 4),
+        np.array([[4, 5, 1, -1], [8, 10, 2, 0]]),
+    ),
     # trim both intervals
     (
         "trim both intervals",
@@ -93,6 +107,13 @@ test_case_values = [
         np.array([[1, 5, 4, 0], [8, 10, 2, 0]]),
         (2, 4),
         np.array([[1, 2, 1, 0], [4, 5, 1, -1], [8, 10, 2, 0]]),
+    ),
+    # trim single interval
+    (
+        "trim single interval",
+        np.array([[1, 5, 4, 0], [8, 10, 2, 0], [11, 12, 1, 0]]),
+        (8, 10),
+        np.array([[1, 5, 4, 0], [11, 12, 1, -1]]),
     ),
 ]
 

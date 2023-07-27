@@ -1,9 +1,11 @@
 import networkx as nx
 
+from ..models import Task
+
 
 class TaskGraph:
-    def __init__(self, tasks):
-        self.tasks = {task.id: task for task in tasks}
+    def __init__(self, tasks_dict: dict[str, Task]):
+        self.tasks_dict = tasks_dict
         self.graph = self._create_task_graph()
 
     def _create_task_graph(self):
@@ -11,10 +13,12 @@ class TaskGraph:
         Creates a directed acyclic graph from the given tasks.
         """
         task_graph = nx.DiGraph()
-        for task in self.tasks.values():
-            task_graph.add_node(task.id, duration=task.duration, priority=task.priority)
+        for task in self.tasks_dict.values():
+            task_graph.add_node(
+                task.uid, duration=task.duration, priority=task.priority
+            )
             for predecessor in task.predecessors:
-                task_graph.add_edge(predecessor.id, task.id)
+                task_graph.add_edge(predecessor.uid, task.uid)
         return task_graph
 
     def _compute_longest_paths(self):
@@ -22,7 +26,7 @@ class TaskGraph:
         Computes the longest path for each node in the task graph using a topological
         sort.
         """
-        longest_path = {task_id: 0 for task_id in self.tasks}
+        longest_path = {task_uid: 0 for task_uid in self.tasks_dict}
         for task in nx.topological_sort(self.graph):
             duration = self.graph.nodes[task]["duration"]
             for predecessor in self.graph.predecessors(task):
@@ -54,10 +58,10 @@ class TaskGraph:
                 result.append(node)
 
         for task in sorted(
-            self.tasks.values(),
-            key=lambda t: (self.graph.nodes[t.id]["priority"], -longest_path[t.id]),
+            self.tasks_dict.values(),
+            key=lambda t: (self.graph.nodes[t.uid]["priority"], -longest_path[t.uid]),
         ):
-            visit(task.id)
+            visit(task.uid)
 
         return result
 

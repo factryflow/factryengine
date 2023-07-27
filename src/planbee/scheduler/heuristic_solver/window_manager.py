@@ -93,11 +93,9 @@ class WindowManager:
             end_idx,
         )
         window = self._handle_mask_end(
-            window, overlap_windows, mask_end, slopes, trim_start, end_idx
+            window, overlap_windows, mask_end, trim_start, end_idx
         )
-        window = self._handle_mask_start(
-            window, overlap_windows, mask_start, slopes, trim_end
-        )
+        window = self._handle_mask_start(window, overlap_windows, mask_start, trim_end)
         window = self._delete_overlapped_windows(
             window, mask_delete, start_idx, end_idx
         )
@@ -149,7 +147,6 @@ class WindowManager:
         windows: np.ndarray,
         overlap_windows: np.ndarray,
         mask_end: np.ndarray,
-        slopes: np.ndarray,
         trim_start: int,
         end_idx: int,
     ) -> np.ndarray:
@@ -157,11 +154,10 @@ class WindowManager:
         Handles the case where mask_end is True.
         """
         if np.any(mask_end):
-            slopes_end = slopes[mask_end]
             overlap_windows[mask_end, 1] = trim_start
             overlap_windows[mask_end, 2] = (
                 overlap_windows[mask_end, 1] - overlap_windows[mask_end, 0]
-            ) * slopes_end
+            )
             end_idx_temp = min(end_idx, windows.shape[0] - 1)  # handle out of bounds
             windows[end_idx_temp, 3] = -1
 
@@ -172,18 +168,16 @@ class WindowManager:
         windows: np.ndarray,
         overlap_windows: np.ndarray,
         mask_start: np.ndarray,
-        slopes: np.ndarray,
         trim_end: int,
     ) -> np.ndarray:
         """
         Handles the case where mask_start is True.
         """
         if np.any(mask_start):
-            slopes_start = slopes[mask_start]
             overlap_windows[mask_start, 0] = trim_end
             overlap_windows[mask_start, 2] = (
                 overlap_windows[mask_start, 1] - overlap_windows[mask_start, 0]
-            ) * slopes_start
+            )
             overlap_windows[mask_start, 3] = -1
 
         return windows
