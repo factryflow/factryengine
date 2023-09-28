@@ -1,8 +1,9 @@
 import networkx as nx
 import pytest
-from planbee import Resource, Task
-from planbee.scheduler.task_batch_processor import TaskBatchProcessor
-from planbee.scheduler.task_graph import TaskGraph
+
+from factryengine import Resource, Task
+from factryengine.scheduler.task_batch_processor import TaskBatchProcessor
+from factryengine.scheduler.task_graph import TaskGraph
 
 
 # Replace the following line with actual task and graph creation

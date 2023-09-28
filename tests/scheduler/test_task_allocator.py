@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
-from planbee.scheduler.heuristic_solver.task_allocator import TaskAllocator
+
+from factryengine.scheduler.heuristic_solver.task_allocator import TaskAllocator
 
 
 @pytest.fixture

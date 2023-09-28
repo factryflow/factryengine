@@ -1,6 +1,7 @@
 import pytest
-from planbee import Task
-from planbee.scheduler.task_graph import TaskGraph
+
+from factryengine import Task
+from factryengine.scheduler.task_graph import TaskGraph
 
 # Assuming a Resource class that can be initialized as Resource(id)
 

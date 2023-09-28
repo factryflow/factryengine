@@ -8,13 +8,13 @@ with open("requirements.txt", "r") as fh:
     requirements = [line.strip() for line in fh]
 
 setuptools.setup(
-    name="planbee",
+    name="factryengine",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     description="production / job shop / resource scheduler for Python",
     author="Jacob Østergaard Nielsen",
     author_email="jaoe@oestergaard-as.dk",
-    url="https://github.com/Yacobolo/PlanBee",
+    url="https://github.com/Yacobolo/factryengine",
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",

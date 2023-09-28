@@ -1,8 +1,7 @@
 import numpy as np
 import pytest
-
-from planbee import Resource
-from planbee.scheduler.heuristic_solver.window_manager import WindowManager
+from factryengine import Resource
+from factryengine.scheduler.heuristic_solver.window_manager import WindowManager
 
 # Test resources
 resource1 = Resource(id=1, available_windows=[(1, 5), (7, 9)])
