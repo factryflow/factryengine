@@ -1,0 +1,47 @@
+site_name: factryengine
+# site_description: FastAPI framework, high performance, easy to learn, fast to code, ready for production
+  
+theme:
+  name: material
+  palette:
+  - media: '(prefers-color-scheme: light)'
+    scheme: default
+    toggle:
+      icon: material/lightbulb
+      name: Switch to dark mode
+  - media: '(prefers-color-scheme: dark)'
+    scheme: slate
+    toggle:
+      icon: material/lightbulb-outline
+      name: Switch to light mode
+  features:
+  - search.suggest
+  - search.highlight
+  - content.tabs.link
+  - navigation.indexes
+  - content.tooltips
+  - navigation.path
+  - content.code.annotate
+  - content.code.copy
+  - content.code.select
+  icon:
+    repo: fontawesome/brands/github-alt
+  language: en
+
+repo_url: https://github.com/Yacobolo/factryengine
+repo_name: factryengine
+
+nav:
+  - Home: index.md
+  - Usage: usage.md
+  - Example: example.ipynb
+
+
+plugins:
+    - mkdocs-jupyter
+
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
