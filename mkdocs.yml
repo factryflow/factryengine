@@ -1,6 +1,6 @@
 site_name: factryengine
 # site_description: FastAPI framework, high performance, easy to learn, fast to code, ready for production
-  
+
 theme:
   name: material
   palette:
@@ -32,7 +32,7 @@ repo_url: https://github.com/Yacobolo/factryengine
 repo_name: factryengine
 
 nav:
-  - Home: index.md
+  - Home: README.md
   - Usage: usage.md
   - Example: example.ipynb
 
