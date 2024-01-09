@@ -1,7 +1,6 @@
 from ..models import Task
 from .heuristic_solver.main import HeuristicSolver
 from .scheduler_result import SchedulerResult
-from .task_batch_processor import TaskBatchProcessor
 from .task_graph import TaskGraph
 
 
@@ -30,10 +29,6 @@ class Scheduler:
 
     def get_task_dict(self, tasks: list[Task]):
         """
-        returns the task dictionary with tasks split into batches
+        returns the task dictionary with task uid as key and task object as value
         """
-        task_dict = {task.uid: task for task in tasks}
-        task_graph = TaskGraph(task_dict).graph
-        task_batch_processor = TaskBatchProcessor(task_graph, task_dict)
-        task_dict_with_batches = task_batch_processor.split_tasks_into_batches()
-        return task_dict_with_batches
+        return {task.uid: task for task in tasks}

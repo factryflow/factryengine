@@ -1,21 +1,20 @@
 from itertools import count
 
-from pydantic import BaseModel, Field, PrivateAttr, validator
+from pydantic import BaseModel, Field, validator
 
 from .resource import Resource
 
 
 class Task(BaseModel):
     id: int | str
+    batch_id: int = None
     duration: int = Field(gt=0)
     priority: int = Field(gt=0)
     resources: list[set[Resource]]
     resource_count: int | str = 1
-    predecessors: list["Task"] = []
+    predecessor_ids: list[int] = []
     predecessor_delay: int = Field(0, gt=0)
-    batch_size: int = Field(None, gt=0)
     quantity: int = Field(None, gt=0)
-    _batch_id: int = PrivateAttr(None)
 
     @property
     def uid(self) -> str:
@@ -24,11 +23,6 @@ class Task(BaseModel):
             return str(self.id)
         else:
             return f"{self.id}-{self.batch_id}"
-
-    @property
-    def batch_id(self):
-        """returns the batch id of the task"""
-        return self._batch_id
 
     def __hash__(self):
         return hash(self.uid)
@@ -66,10 +60,6 @@ class Task(BaseModel):
         else:
             raise ValueError("Invalid value for resource_count.")
 
-    def set_batch_id(self, batch_id):
-        """sets the batch id of the task"""
-        self._batch_id = batch_id
-
     def get_resources(self):
         """returns a list of all resources required for the task"""
         return [
@@ -86,14 +76,3 @@ class Task(BaseModel):
         """
         counter = count()
         return [[next(counter) for _ in sublist] for sublist in self.resources]
-
-    def is_splittable(self):
-        """
-        Checks if the task is splittable into batches.
-        """
-        return (
-            self.batch_size is not None
-            and self.quantity is not None
-            and self.batch_size > 0
-            and self.quantity > self.batch_size
-        )
