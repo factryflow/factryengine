@@ -32,7 +32,7 @@ repo_url: https://github.com/Yacobolo/factryengine
 repo_name: factryengine
 
 nav:
-  - Home: README.md
+  - Home: index.md
   - Usage: usage.md
   - Example: example.ipynb
 
