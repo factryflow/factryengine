@@ -1,6 +1,7 @@
 import numpy as np
 
 from ...models import Resource, Task
+from ..utils import get_task_predecessors
 from .task_allocator import TaskAllocator
 from .window_manager import WindowManager
 
@@ -38,7 +39,7 @@ class HeuristicSolver:
                 [resource.id for resource in task.get_resources()]
             )
 
-            task_earliest_start = self._get_task_earliest_start(task)
+            task_earliest_start = self._get_task_earliest_start(task, self.task_dict)
 
             if task_earliest_start is None:
                 unscheduled_tasks.append(task_uid)
@@ -87,13 +88,16 @@ class HeuristicSolver:
             self.task_vars.values()
         )  # Return values of the dictionary as a list
 
-    def _get_task_earliest_start(self, task):
+    def _get_task_earliest_start(self, task, task_dict):
         """
         Retuns the earliest start of a task based on the latest end of its predecessors.
         """
         task_ends = []
-        for pred in task.predecessors:
-            task_end = self.task_vars[pred.uid]["task_end"]
+
+        predecessors = get_task_predecessors(task, task_dict)
+
+        for pred in predecessors:
+            task_end = self.task_vars[pred.id]["task_end"]
             if task_end is None:
                 return None
             task_ends.append(task_end + task.predecessor_delay)

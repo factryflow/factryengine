@@ -7,7 +7,6 @@ from .resource import Resource
 
 class Task(BaseModel):
     id: int | str
-    batch_id: int = None
     duration: int = Field(gt=0)
     priority: int = Field(gt=0)
     resources: list[set[Resource]]
@@ -16,20 +15,12 @@ class Task(BaseModel):
     predecessor_delay: int = Field(0, gt=0)
     quantity: int = Field(None, gt=0)
 
-    @property
-    def uid(self) -> str:
-        """returns the unique id of the task"""
-        if self.batch_id is None:
-            return str(self.id)
-        else:
-            return f"{self.id}-{self.batch_id}"
-
     def __hash__(self):
-        return hash(self.uid)
+        return hash(self.id)
 
     def __eq__(self, other):
         if isinstance(other, Task):
-            return self.uid == other.uid
+            return self.id == other.id
         return False
 
     @validator("resources", pre=True)

@@ -31,4 +31,4 @@ class Scheduler:
         """
         returns the task dictionary with task uid as key and task object as value
         """
-        return {task.uid: task for task in tasks}
+        return {task.id: task for task in tasks}
