@@ -11,7 +11,7 @@ class Task(BaseModel):
     priority: int = Field(gt=0)
     resources: list[set[Resource]]
     resource_count: int | str = 1
-    predecessor_ids: list[int] = []
+    predecessor_ids: list[int | str] = []
     predecessor_delay: int = Field(0, gt=0)
     quantity: int = Field(None, gt=0)
 
@@ -67,3 +67,7 @@ class Task(BaseModel):
         """
         counter = count()
         return [[next(counter) for _ in sublist] for sublist in self.resources]
+
+    def get_id(self):
+        """returns the task id"""
+        return str(self.id)

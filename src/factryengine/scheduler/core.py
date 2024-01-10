@@ -29,6 +29,6 @@ class Scheduler:
 
     def get_task_dict(self, tasks: list[Task]):
         """
-        returns the task dictionary with task uid as key and task object as value
+        returns the task dictionary with task id as key and task object as value
         """
-        return {task.id: task for task in tasks}
+        return {task.get_id(): task for task in tasks}

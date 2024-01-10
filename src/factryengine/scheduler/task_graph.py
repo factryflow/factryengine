@@ -15,12 +15,14 @@ class TaskGraph:
         """
         task_graph = nx.DiGraph()
         for task in self.tasks_dict.values():
-            task_graph.add_node(task.id, duration=task.duration, priority=task.priority)
+            task_graph.add_node(
+                task.get_id(), duration=task.duration, priority=task.priority
+            )
 
             predecessors = get_task_predecessors(task, self.tasks_dict)
 
             for predecessor in predecessors:
-                task_graph.add_edge(predecessor.id, task.id)
+                task_graph.add_edge(predecessor.get_id(), task.get_id())
 
         return task_graph
 
@@ -29,7 +31,8 @@ class TaskGraph:
         Computes the longest path for each node in the task graph using a topological
         sort.
         """
-        longest_path = {task_uid: 0 for task_uid in self.tasks_dict}
+        longest_path = {task_id: 0 for task_id in self.tasks_dict}
+        print(longest_path)
         for task in nx.topological_sort(self.graph):
             duration = self.graph.nodes[task]["duration"]
             for predecessor in self.graph.predecessors(task):
@@ -62,9 +65,12 @@ class TaskGraph:
 
         for task in sorted(
             self.tasks_dict.values(),
-            key=lambda t: (self.graph.nodes[t.id]["priority"], -longest_path[t.id]),
+            key=lambda t: (
+                self.graph.nodes[t.get_id()]["priority"],
+                -longest_path[t.get_id()],
+            ),
         ):
-            visit(task.id)
+            visit(task.get_id())
 
         return result
 
