@@ -7,6 +7,8 @@ from factryengine.scheduler.heuristic_solver.window_manager import WindowManager
 resource1 = Resource(id=1, available_windows=[(1, 5), (7, 9)])
 resource2 = Resource(id=2, available_windows=[(2, 6), (8, 10)])
 resources = [resource1, resource2]
+window_dtype = [("start", int), ("end", int), ("duration", int), ("is_split", int)]
+
 
 # Test WindowManager
 window_manager = WindowManager(resources)
@@ -14,13 +16,13 @@ window_manager = WindowManager(resources)
 
 # Test case values
 test_case_values = [
-    ([resource1], {1: np.array([(1, 5, 4, 0), (7, 9, 2, 0)])}),
-    ([resource2], {2: np.array([(2, 6, 4, 0), (8, 10, 2, 0)])}),
+    ([resource1], {1: np.array([(1, 5, 4, 0), (7, 9, 2, 0)], dtype=window_dtype)}),
+    ([resource2], {2: np.array([(2, 6, 4, 0), (8, 10, 2, 0)], dtype=window_dtype)}),
     (
         resources,
         {
-            1: np.array([(1, 5, 4, 0), (7, 9, 2, 0)]),
-            2: np.array([(2, 6, 4, 0), (8, 10, 2, 0)]),
+            1: np.array([(1, 5, 4, 0), (7, 9, 2, 0)], dtype=window_dtype),
+            2: np.array([(2, 6, 4, 0), (8, 10, 2, 0)], dtype=window_dtype),
         },
     ),
 ]
@@ -38,8 +40,8 @@ def test_create_resource_windows_dict(resources, expected_output):
 
 # Test case values
 test_case_values = [
-    ([(1, 5), (7, 9)], np.array([(1, 5, 4, 0), (7, 9, 2, 0)])),
-    ([(2, 6), (8, 10)], np.array([(2, 6, 4, 0), (8, 10, 2, 0)])),
+    ([(1, 5), (7, 9)], np.array([(1, 5, 4, 0), (7, 9, 2, 0)], dtype=window_dtype)),
+    ([(2, 6), (8, 10)], np.array([(2, 6, 4, 0), (8, 10, 2, 0)], dtype=window_dtype)),
 ]
 
 

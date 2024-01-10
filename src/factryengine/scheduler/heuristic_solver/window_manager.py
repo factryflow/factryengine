@@ -36,12 +36,26 @@ class WindowManager:
             > 0
         ]
 
+    # def windows_to_numpy(self, windows: list[tuple[int, int]]) -> np.ndarray:
+    #     """
+    #     Converts a list of windows to a numpy array.
+    #     """
+    #     arr = np.array(windows)
+    #     return np.concatenate([arr, np.diff(arr), np.zeros((arr.shape[0], 1))], axis=1)
+
     def windows_to_numpy(self, windows: list[tuple[int, int]]) -> np.ndarray:
         """
         Converts a list of windows to a numpy array.
         """
         arr = np.array(windows)
-        return np.concatenate([arr, np.diff(arr), np.zeros((arr.shape[0], 1))], axis=1)
+        result = np.zeros(
+            arr.shape[0],
+            dtype=[("start", int), ("end", int), ("duration", int), ("is_split", int)],
+        )
+        result["start"], result["end"] = arr[:, 0], arr[:, 1]
+        result["duration"] = np.diff(arr, axis=1).flatten()
+        result["is_split"] = 0
+        return result
 
     def update_resource_windows(
         self, allocated_resource_windows_dict: dict[int, list[tuple[int, int]]]
