@@ -1,28 +1,35 @@
+from collections import namedtuple
+from itertools import compress
 from typing import Optional
 
 import numpy as np
+
+from factryengine.models import Assignment, Resource, Team
+
+Matrix = namedtuple("Matrix", ["resource_ids", "matrix"])
 
 
 class TaskAllocator:
     def allocate_task(
         self,
-        resource_windows: list[np.array],
-        resource_ids: np.array,
+        resource_windows_dict: dict[int, np.array],
+        assignments: list[Assignment],
         task_duration: float,
-        resource_count: int,
-        resource_group_indices: list[list[int]],
     ) -> Optional[dict[int, np.array]]:
-        matrix = self.create_matrix(resource_windows)
+        resource_matrix = self.create_resource_coordinates_matrix(resource_windows_dict)
+        assignment_matrix = self.create_assignment_matrix(
+            assignments[0], resource_matrix
+        )
+
+        print(assignment_matrix)
 
         solution_matrix, solution_resource_ids = self.solve_matrix(
-            matrix=matrix,
+            matrix=assignment_matrix,
             task_duration=task_duration,
-            resource_ids=resource_ids,
-            resource_count=resource_count,
-            resource_group_indices=resource_group_indices,
         )
         if solution_matrix is None:
             return None
+
         # get allocated windows
         allocated_windows = self._get_resource_intervals(
             solution_matrix, solution_resource_ids
@@ -31,9 +38,12 @@ class TaskAllocator:
         return allocated_windows
 
     def create_matrix(self, windows: list[np.array]) -> np.array:
-        boundaries = np.unique(
-            np.concatenate([window[:, 0:2].flatten() for window in windows])
-        )
+        intervals_flattened = np.concatenate(
+            [np.concatenate(window.tolist()) for window in windows]
+        ).flatten()
+
+        boundaries = np.unique(intervals_flattened)
+
         matrix = [boundaries]
         for window in windows:
             window = self._transform_array(window)
@@ -46,27 +56,27 @@ class TaskAllocator:
 
     def solve_matrix(
         self,
-        matrix: np.array,
+        matrix: Matrix,
         task_duration: float,
-        resource_ids: np.array,
         resource_count=1,
-        resource_group_indices=list[list[int]],
     ) -> Optional[dict[int, np.array]]:
         """
         Finds the earliest possible solution for a given task based on its duration and
         the number of resources available. The method uses a matrix representation of
         the resource windows to calculate the optimal allocation of the task.
         """
+        resource_ids = matrix.resource_ids
+        matrix = matrix.matrix
 
         resource_matrix = matrix[:, 1:]
         if resource_count == 1 and task_duration > resource_matrix.max():
             return (None, None)
 
         # mask all but the largest group per row if there are multiple groups
-        if len(resource_group_indices) > 1:
-            resource_matrix = self._fill_array_except_largest_group_per_row(
-                resource_matrix, resource_group_indices
-            )
+        # if len(resource_group_indices) > 1:
+        #     resource_matrix = self._fill_array_except_largest_group_per_row(
+        #         resource_matrix, resource_group_indices
+        #     )
 
         # mask all but the k largest elements per row
         masked_resource_matrix = self._mask_smallest_except_k_largest(
@@ -80,7 +90,7 @@ class TaskAllocator:
         # get solution index and resource ids
         solution_index = np.argmax(arr_sum >= task_duration)
         solution_resources_mask = ~masked_resource_matrix.mask[solution_index]
-        solution_resource_ids = resource_ids[solution_resources_mask]
+        solution_resource_ids = list(compress(resource_ids, solution_resources_mask))
 
         # solve matrix
         solution_cols_mask = np.concatenate([[True], solution_resources_mask])
@@ -127,7 +137,9 @@ class TaskAllocator:
         else:
             return 0
 
-    def _get_resource_intervals(self, solution_matrix, resources):
+    def _get_resource_intervals(
+        self, solution_matrix: np.array, resources: list[int | tuple[int]]
+    ) -> dict[int, list[tuple[float, float]]]:
         """
         gets the resource intervals from the solution matrix.
         """
@@ -137,15 +149,22 @@ class TaskAllocator:
         ]
         end_index = solution_matrix.shape[0] - 1
 
-        resource_windows_dict = {
-            resource_id: (
-                self._split_intervals(solution_matrix[start_index:, [0, i + 1]])
-            )
-            for i, (resource_id, start_index) in enumerate(
-                zip(resources, start_indexes)
-            )
-            if start_index < end_index
-        }
+        resource_windows_dict = {}
+
+        for i, (resource_ids, start_index) in enumerate(zip(resources, start_indexes)):
+            if start_index < end_index:
+                # is a team
+                if isinstance(resource_ids, tuple):
+                    for resource_id in resource_ids:
+                        resource_windows_dict[resource_id] = self._split_intervals(
+                            solution_matrix[start_index:, [0, i + 1]]
+                        )
+                # is a single resource
+                else:
+                    resource_windows_dict[resource_ids] = self._split_intervals(
+                        solution_matrix[start_index:, [0, i + 1]]
+                    )
+
         return resource_windows_dict
 
     def _split_intervals(self, arr):
@@ -224,10 +243,10 @@ class TaskAllocator:
         overcount = np.maximum.accumulate(without_reset * reset_at)
         return without_reset - overcount
 
-    def _transform_array(self, arr):
+    def _transform_array(self, window):
         # Separate the start/end values and start/end duration values
-        interval_values = arr[:, [0, 1]].ravel()
-        durations = arr[:, [3, 2]].ravel()
+        interval_values = np.concatenate(window[["start", "end"]].tolist())
+        durations = np.concatenate(window[["is_split", "duration"]].tolist())
 
         # Stack the interval values and durations together
         result = np.column_stack((interval_values, durations))
@@ -280,3 +299,119 @@ class TaskAllocator:
         combined = combined[np.argsort(combined[:, 0])]
 
         return combined
+
+    def interpolate_y_values(self, array):
+        """
+        Perform linear interpolation to fill nan values in multiple y-columns of the array,
+        using advanced NumPy features without an explicit for-loop.
+
+        :param array: A numpy array with shape (1, n, m) where the first column represents x-values
+                    and the remaining columns represent multiple y-values, which may contain nan.
+        :return: A numpy array with the same shape, where nan values in the y-columns have been
+                    interpolated based on the x and y values of the non-nan points.
+        """
+        # Extracting x column and y-columns
+        x = array[0, :, 0]
+        y_columns = array[0, :, 1:]
+
+        # Mask for nan values in y-columns
+        nan_mask = np.isnan(y_columns)
+
+        # Performing linear interpolation for each y-column
+        for i in range(y_columns.shape[1]):
+            # Mask and values for the current y-column
+            current_y = y_columns[:, i]
+            current_nan_mask = nan_mask[:, i]
+
+            # Interpolating only the nan values
+            current_y[current_nan_mask] = np.interp(
+                x[current_nan_mask], x[~current_nan_mask], current_y[~current_nan_mask]
+            )
+
+        # Updating the y-columns in the array
+        array[0, :, 1:] = y_columns
+
+        return array
+
+    def replace_missing_boundaries_with_nan(self, array, mask):
+        result_array = np.full(mask.shape, np.nan)  # Initialize with nan
+        result_array[mask] = array
+        return result_array
+
+    def create_resource_coordinates_matrix(self, windows_dict):
+        windows = np.array(list(windows_dict.values()))
+        boundaries = np.unique(np.dstack((windows["start"], windows["end"])))
+        columns = [boundaries]
+        for window in windows:
+            window_boundaries = np.dstack((window["start"], window["end"])).flatten()
+
+            missing_boundaries_mask = np.isin(boundaries, window_boundaries)
+
+            window_durations = np.dstack(
+                (window["is_split"], window["duration"])
+            ).flatten()
+
+            window_durations_cumsum = self._cumsum_reset_at_minus_one(window_durations)
+
+            duration_colunm = self.replace_missing_boundaries_with_nan(
+                window_durations_cumsum, missing_boundaries_mask
+            )
+
+            columns.append(duration_colunm)
+
+        coordinates = np.dstack((columns))
+        coordinates_nan_filled = self.interpolate_y_values(coordinates)
+        return Matrix(
+            resource_ids=list(windows_dict.keys()), matrix=coordinates_nan_filled[0]
+        )
+
+    def create_assignment_matrix(
+        self, assignment: Assignment, matrix: Matrix
+    ) -> Matrix:
+        """Create the matrices for the resource groups in the assignment"""
+
+        matrix_durations = matrix.matrix[:, 1:]
+        output_matrix = matrix.matrix[:, [0]]
+        resource_ids = []
+
+        for entity in assignment.entities:
+            if isinstance(entity, Team):
+                entity_resource_ids = [resource.id for resource in entity.resources]
+
+                # Check if the team resources exist in the matrix resource ids else skip
+                if not set(entity_resource_ids).issubset(set(matrix.resource_ids)):
+                    continue
+
+                # Get the indices of the team resources in the matrix resource ids
+                columns = [
+                    matrix.resource_ids.index(resource_id)
+                    for resource_id in entity_resource_ids
+                ]
+
+                team_matrix = matrix_durations[:, columns]
+
+                # Sum the durations of the team resources
+                team_matrix = np.sum(team_matrix, axis=1, keepdims=True)
+
+                # Add the team matrix to the output matrix
+                output_matrix = np.hstack((output_matrix, team_matrix))
+
+                resource_ids.append(tuple(entity_resource_ids))
+
+            elif isinstance(entity, Resource):
+                if entity.id not in matrix.resource_ids:
+                    continue
+                # Get the index of the resource in the matrix resource ids
+                column = matrix.resource_ids.index(entity.id)
+                # Add the resource matrix to the output matrix
+                output_matrix = np.hstack(
+                    (output_matrix, matrix_durations[:, [column]])
+                )
+                resource_ids.append(entity.id)
+
+        # check if the required entity count is met
+        if assignment.entity_count > output_matrix.shape[1] - 1:
+            # TODO raise error
+            pass
+
+        return Matrix(resource_ids=resource_ids, matrix=output_matrix)

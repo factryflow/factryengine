@@ -36,7 +36,7 @@ class HeuristicSolver:
 
             # get task resources and windows dict
             task_resource_ids = np.array(
-                [resource.id for resource in task.get_resources()]
+                [resource.id for resource in task.get_unique_resources()]
             )
 
             task_earliest_start = self._get_task_earliest_start(task, self.task_dict)
@@ -45,20 +45,21 @@ class HeuristicSolver:
                 unscheduled_tasks.append(task_id)
                 continue
 
-            task_resource_windows = self.window_manager.get_task_resource_windows(
-                task_resource_ids, task_earliest_start
+            task_resource_windows_dict = (
+                self.window_manager.get_task_resource_windows_dict(
+                    task_resource_ids, task_earliest_start
+                )
             )
-            if not task_resource_windows:
+
+            if task_resource_windows_dict == {}:
                 unscheduled_tasks.append(task_id)
                 continue
 
             # allocate task
             allocated_resource_windows_dict = self.task_allocator.allocate_task(
-                resource_windows=task_resource_windows,
-                resource_ids=task_resource_ids,
+                resource_windows_dict=task_resource_windows_dict,
+                assignments=task.assignments,
                 task_duration=task.duration,
-                resource_count=task.resource_count,
-                resource_group_indices=task.get_resource_group_indices(),
             )
 
             if not allocated_resource_windows_dict:
@@ -88,7 +89,7 @@ class HeuristicSolver:
             self.task_vars.values()
         )  # Return values of the dictionary as a list
 
-    def _get_task_earliest_start(self, task, task_dict):
+    def _get_task_earliest_start(self, task: Task, task_dict: dict) -> int | None:
         """
         Retuns the earliest start of a task based on the latest end of its predecessors.
         """
@@ -104,7 +105,11 @@ class HeuristicSolver:
 
         return max(task_ends, default=0)
 
-    def min_max_dict_np(self, d):
+    def min_max_dict_np(self, d: dict) -> dict:
+        """
+        For each key in the input dictionary, finds the minimum of the first elements
+        and the maximum of the second elements in the associated list of tuples.
+        """
         result = {}
 
         for key, value_list in d.items():
