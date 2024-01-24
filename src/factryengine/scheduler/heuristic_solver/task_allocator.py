@@ -4,7 +4,7 @@ from typing import Optional
 
 import numpy as np
 
-from factryengine.models import Assignment, Resource, Team
+from factryengine.models import Assignment
 
 Matrix = namedtuple("Matrix", ["resource_ids", "matrix"])
 
@@ -20,8 +20,6 @@ class TaskAllocator:
         assignment_matrix = self.create_assignment_matrix(
             assignments[0], resource_matrix
         )
-
-        print(assignment_matrix)
 
         solution_matrix, solution_resource_ids = self.solve_matrix(
             matrix=assignment_matrix,
@@ -138,7 +136,7 @@ class TaskAllocator:
             return 0
 
     def _get_resource_intervals(
-        self, solution_matrix: np.array, resources: list[int | tuple[int]]
+        self, solution_matrix: np.array, resource_ids: list[tuple[int]]
     ) -> dict[int, list[tuple[float, float]]]:
         """
         gets the resource intervals from the solution matrix.
@@ -151,17 +149,12 @@ class TaskAllocator:
 
         resource_windows_dict = {}
 
-        for i, (resource_ids, start_index) in enumerate(zip(resources, start_indexes)):
+        for i, (group_resource_ids, start_index) in enumerate(
+            zip(resource_ids, start_indexes)
+        ):
             if start_index < end_index:
-                # is a team
-                if isinstance(resource_ids, tuple):
-                    for resource_id in resource_ids:
-                        resource_windows_dict[resource_id] = self._split_intervals(
-                            solution_matrix[start_index:, [0, i + 1]]
-                        )
-                # is a single resource
-                else:
-                    resource_windows_dict[resource_ids] = self._split_intervals(
+                for resource_id in group_resource_ids:
+                    resource_windows_dict[resource_id] = self._split_intervals(
                         solution_matrix[start_index:, [0, i + 1]]
                     )
 
@@ -372,42 +365,29 @@ class TaskAllocator:
 
         matrix_durations = matrix.matrix[:, 1:]
         output_matrix = matrix.matrix[:, [0]]
-        resource_ids = []
+        resource_ids: list[tuple[int]] = []
 
-        for entity in assignment.entities:
-            if isinstance(entity, Team):
-                entity_resource_ids = [resource.id for resource in entity.resources]
+        for group_resource_ids in assignment.get_resource_ids():
+            # Check if the team resources exist in the matrix resource ids else skip
+            if not set(group_resource_ids).issubset(set(matrix.resource_ids)):
+                continue
 
-                # Check if the team resources exist in the matrix resource ids else skip
-                if not set(entity_resource_ids).issubset(set(matrix.resource_ids)):
-                    continue
+            # Get the indices of the team resources in the matrix resource ids
+            columns = [
+                matrix.resource_ids.index(resource_id)
+                for resource_id in group_resource_ids
+            ]
 
-                # Get the indices of the team resources in the matrix resource ids
-                columns = [
-                    matrix.resource_ids.index(resource_id)
-                    for resource_id in entity_resource_ids
-                ]
+            group_matrix = matrix_durations[:, columns]
 
-                team_matrix = matrix_durations[:, columns]
+            # Sum the group matrix if there are multiple resources in the group
+            if len(group_resource_ids) > 1:
+                group_matrix = np.sum(group_matrix, axis=1, keepdims=True)
 
-                # Sum the durations of the team resources
-                team_matrix = np.sum(team_matrix, axis=1, keepdims=True)
+            # Add the team matrix to the output matrix
+            output_matrix = np.hstack((output_matrix, group_matrix))
 
-                # Add the team matrix to the output matrix
-                output_matrix = np.hstack((output_matrix, team_matrix))
-
-                resource_ids.append(tuple(entity_resource_ids))
-
-            elif isinstance(entity, Resource):
-                if entity.id not in matrix.resource_ids:
-                    continue
-                # Get the index of the resource in the matrix resource ids
-                column = matrix.resource_ids.index(entity.id)
-                # Add the resource matrix to the output matrix
-                output_matrix = np.hstack(
-                    (output_matrix, matrix_durations[:, [column]])
-                )
-                resource_ids.append(entity.id)
+            resource_ids.append(group_resource_ids)
 
         # check if the required entity count is met
         if assignment.entity_count > output_matrix.shape[1] - 1:

@@ -7,16 +7,26 @@ class Assignment(BaseModel):
     entities: list[Resource | Team] = Field(..., min_items=1)
     entity_count: int = Field(1, gt=0)
 
-    def get_resource_groups(self) -> list[tuple[Resource]]:
-        """returns a list of all resources required for the assignment"""
-        resources = []
-        teams_resources = []
+    def get_resource_ids(self) -> list[tuple[int]]:
+        """returns a list of tuples of resource ids for each entity in the assignment"""
+        resource_ids = []
         for entity in self.entities:
-            if isinstance(entity, Resource):
-                resources.append(entity)
+            if isinstance(entity, Team):
+                team_resource_ids = [resource.id for resource in entity.resources]
+                resource_ids.append(tuple(team_resource_ids))
             else:
-                teams_resources.append(tuple(entity.resources))
-        return [tuple(resources)] + teams_resources
+                resource_ids.append(tuple([entity.id]))
+        return resource_ids
+
+    def get_unique_resources(self) -> set[Resource]:
+        """returns a set of all unique resources required for the assignment"""
+        unique_resources = set()
+        for entity in self.entities:
+            if isinstance(entity, Team):
+                unique_resources.update(entity.resources)
+            else:
+                unique_resources.add(entity)
+        return unique_resources
 
 
 class Task(BaseModel):
@@ -43,8 +53,7 @@ class Task(BaseModel):
             [
                 resource
                 for assignment in self.assignments
-                for groups in assignment.get_resource_groups()
-                for resource in groups
+                for resource in assignment.get_unique_resources()
             ]
         )
 
