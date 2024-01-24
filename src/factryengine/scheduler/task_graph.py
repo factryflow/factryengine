@@ -32,7 +32,6 @@ class TaskGraph:
         sort.
         """
         longest_path = {task_id: 0 for task_id in self.tasks_dict}
-        print(longest_path)
         for task in nx.topological_sort(self.graph):
             duration = self.graph.nodes[task]["duration"]
             for predecessor in self.graph.predecessors(task):
