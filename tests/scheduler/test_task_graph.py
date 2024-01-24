@@ -21,7 +21,6 @@ def tasks_dict() -> dict[str, Task]:
 
 def test_create_task_graph(tasks_dict):
     task_graph = TaskGraph(tasks_dict)
-    print(task_graph.graph)
     assert len(task_graph.graph) == 3
     assert len(task_graph.graph.edges) == 3
     assert "1" in task_graph.graph
