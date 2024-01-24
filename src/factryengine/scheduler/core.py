@@ -1,15 +1,13 @@
-from ..models import Task
+from ..models import Resource, Task
 from .heuristic_solver.main import HeuristicSolver
 from .scheduler_result import SchedulerResult
 from .task_graph import TaskGraph
 
 
 class Scheduler:
-    def __init__(self, tasks: list[Task]):
+    def __init__(self, tasks: list[Task], resources: list[Resource]):
         self.tasks = tasks
-        self.resources = set(
-            resource for task in tasks for resource in task.get_resources()
-        )
+        self.resources = resources
         self.task_dict = self.get_task_dict(tasks)
         self.task_graph = TaskGraph(self.task_dict)
 
