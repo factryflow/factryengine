@@ -1,9 +1,10 @@
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 
 
 class Resource(BaseModel):
     id: int
+    name: str = ""
     available_windows: list[tuple[int, int]] = []
     efficiency_multiplier: float = 1
 
@@ -14,6 +15,12 @@ class Resource(BaseModel):
         if isinstance(other, Resource):
             return self.id == other.id
         return False
+
+    @validator("name", pre=True, always=True)
+    def set_name(cls, v, values):
+        if v == "":
+            return str(values.get("id"))
+        return v
 
     def merge_intervals(self) -> None:
         """
@@ -42,3 +49,16 @@ class Resource(BaseModel):
         self.available_windows = [
             (windows[i, 0], windows[j, 1]) for i, j in zip(start_indices, end_indices)
         ]
+
+
+class Team(BaseModel):
+    name: str
+    resources: list[Resource] = Field(..., min_items=1)
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __eq__(self, other):
+        if isinstance(other, Team):
+            return self.name == other.name
+        return False
