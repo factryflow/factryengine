@@ -6,6 +6,8 @@ import numpy as np
 
 from factryengine.models import Assignment
 
+from .exceptions import AllocationError
+
 Matrix = namedtuple("Matrix", ["resource_ids", "matrix"])
 
 
@@ -16,24 +18,45 @@ class TaskAllocator:
         assignments: list[Assignment],
         task_duration: float,
     ) -> Optional[dict[int, np.array]]:
-        resource_matrix = self.create_resource_coordinates_matrix(resource_windows_dict)
-        assignment_matrix = self.create_assignment_matrix(
-            assignments[0], resource_matrix
-        )
+        # initialize task allocated windows
+        task_allocated_windows = {}
 
-        solution_matrix, solution_resource_ids = self.solve_matrix(
-            matrix=assignment_matrix,
-            task_duration=task_duration,
-        )
-        if solution_matrix is None:
-            return None
+        for assignment in assignments:
+            # create resource matrix
+            resource_matrix = self.create_resource_coordinates_matrix(
+                resource_windows_dict
+            )
 
-        # get allocated windows
-        allocated_windows = self._get_resource_intervals(
-            solution_matrix, solution_resource_ids
-        )
+            # create assignment matrix from resource matrix
+            assignment_matrix = self.create_assignment_matrix(
+                assignment, resource_matrix
+            )
 
-        return allocated_windows
+            # find solution using assignment matrix
+            solution_matrix, solution_resource_ids = self.solve_matrix(
+                matrix=assignment_matrix,
+                task_duration=task_duration,
+            )
+
+            # get allocated windows
+            assignment_allocated_windows = self._get_resource_intervals(
+                solution_matrix, solution_resource_ids
+            )
+
+            # update task allocated windows
+            task_allocated_windows.update(assignment_allocated_windows)
+
+            # check if not last iteration
+            if assignment != assignments[-1]:
+                # update remove resource ids from resource windows dict
+                solution_resource_ids_flattend = self._flatten_list_of_tuples(
+                    solution_resource_ids
+                )
+                resource_windows_dict = self._update_resource_windows_dict(
+                    resource_windows_dict, solution_resource_ids_flattend
+                )
+
+        return task_allocated_windows
 
     def create_matrix(self, windows: list[np.array]) -> np.array:
         intervals_flattened = np.concatenate(
@@ -57,7 +80,7 @@ class TaskAllocator:
         matrix: Matrix,
         task_duration: float,
         resource_count=1,
-    ) -> Optional[dict[int, np.array]]:
+    ) -> (dict[int, np.array], list[tuple[int]]):
         """
         Finds the earliest possible solution for a given task based on its duration and
         the number of resources available. The method uses a matrix representation of
@@ -67,8 +90,12 @@ class TaskAllocator:
         matrix = matrix.matrix
 
         resource_matrix = matrix[:, 1:]
+
         if resource_count == 1 and task_duration > resource_matrix.max():
-            return (None, None)
+            raise AllocationError(
+                f"Task duration {task_duration} is greater than the maximum resource "
+                f"duration {resource_matrix.max()}."
+            )
 
         # mask all but the largest group per row if there are multiple groups
         # if len(resource_group_indices) > 1:
@@ -83,7 +110,10 @@ class TaskAllocator:
 
         arr_sum = np.sum(masked_resource_matrix, axis=1)
         if task_duration > arr_sum.max():
-            return (None, None)
+            raise AllocationError(
+                f"Task duration {task_duration} is greater than the maximum resource "
+                f"duration {arr_sum.max()}."
+            )
 
         # get solution index and resource ids
         solution_index = np.argmax(arr_sum >= task_duration)
@@ -391,7 +421,21 @@ class TaskAllocator:
 
         # check if the required entity count is met
         if assignment.entity_count > output_matrix.shape[1] - 1:
-            # TODO raise error
-            pass
+            raise AllocationError(
+                f"Assignment {assignment.id} requires {assignment.entity_count} "
+                f"entities but only {output_matrix.shape[1] - 1} are available."
+            )
 
         return Matrix(resource_ids=resource_ids, matrix=output_matrix)
+
+    def _update_resource_windows_dict(
+        self, resource_windows_dict: dict, solution_resource_ids: list
+    ):
+        return {
+            resource_id: resource_windows_dict[resource_id]
+            for resource_id in resource_windows_dict.keys()
+            if resource_id not in solution_resource_ids
+        }
+
+    def _flatten_list_of_tuples(self, list_of_tuples):
+        return [item for sublist in list_of_tuples for item in sublist]

@@ -2,6 +2,7 @@ import numpy as np
 
 from ...models import Resource, Task
 from ..utils import get_task_predecessors
+from .exceptions import AllocationError
 from .task_allocator import TaskAllocator
 from .window_manager import WindowManager
 
@@ -56,13 +57,13 @@ class HeuristicSolver:
                 continue
 
             # allocate task
-            allocated_resource_windows_dict = self.task_allocator.allocate_task(
-                resource_windows_dict=task_resource_windows_dict,
-                assignments=task.assignments,
-                task_duration=task.duration,
-            )
-
-            if not allocated_resource_windows_dict:
+            try:
+                allocated_resource_windows_dict = self.task_allocator.allocate_task(
+                    resource_windows_dict=task_resource_windows_dict,
+                    assignments=task.assignments,
+                    task_duration=task.duration,
+                )
+            except AllocationError:
                 unscheduled_tasks.append(task_id)
                 continue
 
