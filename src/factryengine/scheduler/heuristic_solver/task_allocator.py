@@ -1,6 +1,5 @@
 from collections import namedtuple
 from itertools import compress
-from typing import Optional
 
 import numpy as np
 
@@ -17,30 +16,35 @@ class TaskAllocator:
         resource_windows_dict: dict[int, np.array],
         assignments: list[Assignment],
         task_duration: float,
-    ) -> Optional[dict[int, np.array]]:
+    ) -> dict[int, tuple[float, float]]:
+        """
+        allocates a task to the resources with the fastest completion based on the resource windows dict.
+        Assignments determine which resources and how many.
+        """
         # initialize task allocated windows
         task_allocated_windows = {}
 
         for assignment in assignments:
             # create resource matrix
-            resource_matrix = self.create_resource_coordinates_matrix(
+            resource_matrix = self._create_resource_coordinates_matrix(
                 resource_windows_dict
             )
 
             # create assignment matrix from resource matrix
-            assignment_matrix = self.create_assignment_matrix(
+            assignment_matrix = self._create_assignment_matrix(
                 assignment, resource_matrix
             )
 
             # find solution using assignment matrix
-            solution_matrix, solution_resource_ids = self.solve_matrix(
+            solution_matrix, solution_resource_ids = self._solve_matrix(
                 matrix=assignment_matrix,
                 task_duration=task_duration,
+                resource_count=assignment.entity_count,
             )
 
             # get allocated windows
             assignment_allocated_windows = self._get_resource_intervals(
-                solution_matrix, solution_resource_ids
+                solution_matrix, solution_resource_ids, resource_matrix
             )
 
             # update task allocated windows
@@ -55,31 +59,13 @@ class TaskAllocator:
                 resource_windows_dict = self._update_resource_windows_dict(
                     resource_windows_dict, solution_resource_ids_flattend
                 )
-
         return task_allocated_windows
 
-    def create_matrix(self, windows: list[np.array]) -> np.array:
-        intervals_flattened = np.concatenate(
-            [np.concatenate(window.tolist()) for window in windows]
-        ).flatten()
-
-        boundaries = np.unique(intervals_flattened)
-
-        matrix = [boundaries]
-        for window in windows:
-            window = self._transform_array(window)
-            window[:, 1] = self._cumsum_reset_at_minus_one(window[:, 1])
-            new_boundaries = np.setdiff1d(boundaries, window[:, 0])
-            window = self._expand_array(window, new_boundaries)
-            matrix.append(window[:, 1])
-
-        return np.stack(matrix, axis=-1)
-
-    def solve_matrix(
+    def _solve_matrix(
         self,
         matrix: Matrix,
         task_duration: float,
-        resource_count=1,
+        resource_count: int,
     ) -> (dict[int, np.array], list[tuple[int]]):
         """
         Finds the earliest possible solution for a given task based on its duration and
@@ -91,24 +77,21 @@ class TaskAllocator:
 
         resource_matrix = matrix[:, 1:]
 
+        # check if task duration is greater than the maximum resource duration
         if resource_count == 1 and task_duration > resource_matrix.max():
             raise AllocationError(
                 f"Task duration {task_duration} is greater than the maximum resource "
                 f"duration {resource_matrix.max()}."
             )
 
-        # mask all but the largest group per row if there are multiple groups
-        # if len(resource_group_indices) > 1:
-        #     resource_matrix = self._fill_array_except_largest_group_per_row(
-        #         resource_matrix, resource_group_indices
-        #     )
-
         # mask all but the k largest elements per row
-        masked_resource_matrix = self._mask_smallest_except_k_largest(
+        masked_resource_matrix = self._mask_smallest_elements_except_top_k_per_row(
             resource_matrix, resource_count
         )
 
         arr_sum = np.sum(masked_resource_matrix, axis=1)
+
+        # check if task duration is greater than the maximum resource duration
         if task_duration > arr_sum.max():
             raise AllocationError(
                 f"Task duration {task_duration} is greater than the maximum resource "
@@ -118,16 +101,25 @@ class TaskAllocator:
         # get solution index and resource ids
         solution_index = np.argmax(arr_sum >= task_duration)
         solution_resources_mask = ~masked_resource_matrix.mask[solution_index]
+        # filter resource ids using solution resource mask
         solution_resource_ids = list(compress(resource_ids, solution_resources_mask))
 
         # solve matrix
+        # build matrix which has the solution
+
+        # include first column in solution
         solution_cols_mask = np.concatenate([[True], solution_resources_mask])
+
+        # select solution data + 1 row to do linear regression
         solution_matrix = matrix[: solution_index + 1, solution_cols_mask]
+
+        # do linear regression to find precise solution
         solution = self._solve_task_end(solution_matrix[-2:], task_duration)
+
+        # add solution to solution matrix
         solution_matrix = np.vstack(
             (solution_matrix[:solution_index], np.atleast_2d(solution))
         )
-
         return solution_matrix, solution_resource_ids
 
     def _solve_task_end(self, matrix: np.array, task_duration: int) -> np.array:
@@ -154,10 +146,16 @@ class TaskAllocator:
 
         return result
 
-    def _get_window_start_index(self, arr):
+    def _find_last_zero_index(self, arr):
         """
-        returns the index of the first non-zero element in an array from the end.
+        returns the index of the last zero in an array.
         """
+
+        # if last element is zero return None
+        if arr[-1] == 0:
+            return None
+
+        # find the indices of zeros from the end
         zero_indices = np.nonzero(arr == 0)  # Find the indices of zeros from the end
 
         if zero_indices[0].size > 0:
@@ -166,46 +164,48 @@ class TaskAllocator:
             return 0
 
     def _get_resource_intervals(
-        self, solution_matrix: np.array, resource_ids: list[tuple[int]]
-    ) -> dict[int, list[tuple[float, float]]]:
+        self,
+        solution_matrix: np.array,
+        resource_ids: list[tuple[int]],
+        resource_matrix: Matrix,
+    ) -> dict[int, tuple[float, float]]:
         """
         gets the resource intervals from the solution matrix.
         """
-        start_indexes = [
-            self._get_window_start_index(resource_arr)
-            for resource_arr in solution_matrix[:, 1:].T
-        ]
         end_index = solution_matrix.shape[0] - 1
 
         resource_windows_dict = {}
 
-        for i, (group_resource_ids, start_index) in enumerate(
-            zip(resource_ids, start_indexes)
-        ):
-            if start_index < end_index:
-                for resource_id in group_resource_ids:
-                    resource_windows_dict[resource_id] = self._split_intervals(
-                        solution_matrix[start_index:, [0, i + 1]]
+        for group_resource_ids in resource_ids:
+            for resource_id in group_resource_ids:
+                resource_column = resource_matrix.resource_ids.index(resource_id) + 1
+                resource_durations = resource_matrix.matrix[
+                    : end_index + 1, resource_column
+                ].T
+                start_index = self._find_last_zero_index(resource_durations)
+
+                if start_index is not None:
+                    resource_windows_dict[resource_id] = (
+                        solution_matrix[start_index, 0],
+                        solution_matrix[end_index, 0],
                     )
 
         return resource_windows_dict
 
-    def _split_intervals(self, arr):
-        """
-        splits an array into intervals based on the values in the second column.
-        Splitting is done when the value in the second column does not change.
-        """
-        diff = np.diff(arr[:, 1])
-        indices = np.where(diff == 0)[0]
-        splits = np.split(arr[:, 0], indices + 1)
-        intervals = [
-            (round(np.min(split), 2), round(np.max(split), 2))
-            for split in splits
-            if split.size > 1
-        ]
-        return intervals
+    def find_task_start(
+        self, resource_matrix: Matrix, resource_id: int, start_index, end_index
+    ):
+        resource_column = (
+            Matrix.resource_ids.index(resource_id) + 1
+        )  # add 1 because the first column is duration
+        resource_matrix = resource_matrix[start_index:end_index, [0, resource_column]]
+        # find the last zero index
+        last_zero_index = self._find_last_zero_index(resource_matrix[:, 1])
+        return
 
-    def _mask_smallest_except_k_largest(self, array, k) -> np.ma.core.MaskedArray:
+    def _mask_smallest_elements_except_top_k_per_row(
+        self, array, k
+    ) -> np.ma.core.MaskedArray:
         """
         Masks the smallest elements in an array, except for the k largest elements on
         each row. This is a helper method used in the finding of the earliest solution.
@@ -219,42 +219,7 @@ class TaskAllocator:
         masked_array = np.ma.masked_array(array, mask=mask)
         return masked_array
 
-    def _fill_array_except_largest_group_per_row(
-        self, array, group_indices=list[list[int, int]]
-    ) -> np.array:
-        """
-        Returns an array where all elements in each row are filled with zero except
-        those in the group (set of columns) with the largest sum. Groups are defined by
-        a list of lists, each inner list containing the indices of columns in that
-        group. Originally zero elements and those not in the largest sum group are
-        filled withzeros.
-        """
-        num_rows = array.shape[0]
-        # Initialize mask with all True (masked)
-        mask = np.ones_like(array, dtype=bool)
-
-        # Iterate over each row in the array
-        for i in range(num_rows):
-            row = array[i]
-            # Calculate the sums for each group in the row
-            group_sums = [np.sum(row[group]) for group in group_indices]
-            # Find the indices of the group with the largest sum
-            largest_group = group_indices[np.argmax(group_sums)]
-            # Unmask (False) the elements in the largest group
-            mask[i, largest_group] = False
-
-        # Ensure all zeros in the array are masked
-        mask[array == 0] = True
-
-        # Apply the mask to the array
-        masked_array = np.ma.masked_array(array, mask=mask)
-
-        # Fill masked values with zeros
-        filled_array = masked_array.filled(0)
-
-        return filled_array
-
-    def _cumsum_reset_at_minus_one(self, a) -> np.ndarray:
+    def _cumsum_reset_at_minus_one(self, a: np.ndarray) -> np.ndarray:
         """
         Computes the cumulative sum of an array but resets the sum to zero whenever a
         -1 is encountered. This is a helper method used in the creation of the resource
@@ -266,64 +231,7 @@ class TaskAllocator:
         overcount = np.maximum.accumulate(without_reset * reset_at)
         return without_reset - overcount
 
-    def _transform_array(self, window):
-        # Separate the start/end values and start/end duration values
-        interval_values = np.concatenate(window[["start", "end"]].tolist())
-        durations = np.concatenate(window[["is_split", "duration"]].tolist())
-
-        # Stack the interval values and durations together
-        result = np.column_stack((interval_values, durations))
-
-        return result
-
-    def _expand_array(self, arr: np.ndarray, new_boundaries: np.ndarray) -> np.ndarray:
-        """
-        Expands an array with new boundaries and calculates the corresponding durations
-        using linear interpolation.
-        """
-        new_boundaries = np.asarray(new_boundaries)
-
-        # Only keep the boundaries that are not already in the array and within the
-        # existing range
-        mask = (
-            ~np.isin(new_boundaries, arr[:, 0])
-            & (new_boundaries >= arr[0, 0])
-            & (new_boundaries <= arr[-1, 0])
-        )
-        filtered_boundaries = new_boundaries[mask]
-
-        # Find the indices where the new boundaries fit
-        idxs = np.searchsorted(arr[:, 0], filtered_boundaries)
-
-        # Calculate the weights for linear interpolation
-        weights = (filtered_boundaries - arr[idxs - 1, 0]) / (
-            arr[idxs, 0] - arr[idxs - 1, 0]
-        )
-
-        duration_increase = weights * (arr[idxs, 1] - arr[idxs - 1, 1])
-
-        # ensure duration cannot decrease
-        duration_increase[duration_increase < 0] = 0
-
-        # Calculate the new durations using linear interpolation
-        new_durations = arr[idxs - 1, 1] + duration_increase
-
-        # Combine the new boundaries and durations into an array
-        new_rows_within_range = np.column_stack((filtered_boundaries, new_durations))
-
-        # Handle boundaries that are outside the existing range
-        new_rows_outside_range = np.column_stack(
-            (new_boundaries[~mask], np.zeros(np.sum(~mask)))
-        )
-
-        # Combine the old boundaries/durations and new boundaries/durations and sort by
-        # the boundaries
-        combined = np.vstack((arr, new_rows_within_range, new_rows_outside_range))
-        combined = combined[np.argsort(combined[:, 0])]
-
-        return combined
-
-    def interpolate_y_values(self, array):
+    def _interpolate_y_values(self, array: np.ndarray) -> np.ndarray:
         """
         Perform linear interpolation to fill nan values in multiple y-columns of the array,
         using advanced NumPy features without an explicit for-loop.
@@ -356,12 +264,16 @@ class TaskAllocator:
 
         return array
 
-    def replace_missing_boundaries_with_nan(self, array, mask):
+    def _replace_masked_values_with_nan(
+        self, array: np.ndarray, mask: np.ndarray
+    ) -> np.ndarray:
         result_array = np.full(mask.shape, np.nan)  # Initialize with nan
         result_array[mask] = array
         return result_array
 
-    def create_resource_coordinates_matrix(self, windows_dict):
+    def _create_resource_coordinates_matrix(
+        self, windows_dict: dict[int, np.ndarray]
+    ) -> Matrix:
         windows = np.array(list(windows_dict.values()))
         boundaries = np.unique(np.dstack((windows["start"], windows["end"])))
         columns = [boundaries]
@@ -376,19 +288,19 @@ class TaskAllocator:
 
             window_durations_cumsum = self._cumsum_reset_at_minus_one(window_durations)
 
-            duration_colunm = self.replace_missing_boundaries_with_nan(
+            duration_column = self._replace_masked_values_with_nan(
                 window_durations_cumsum, missing_boundaries_mask
             )
 
-            columns.append(duration_colunm)
+            columns.append(duration_column)
 
         coordinates = np.dstack((columns))
-        coordinates_nan_filled = self.interpolate_y_values(coordinates)
+        coordinates_nan_filled = self._interpolate_y_values(coordinates)
         return Matrix(
             resource_ids=list(windows_dict.keys()), matrix=coordinates_nan_filled[0]
         )
 
-    def create_assignment_matrix(
+    def _create_assignment_matrix(
         self, assignment: Assignment, matrix: Matrix
     ) -> Matrix:
         """Create the matrices for the resource groups in the assignment"""
@@ -430,7 +342,7 @@ class TaskAllocator:
 
     def _update_resource_windows_dict(
         self, resource_windows_dict: dict, solution_resource_ids: list
-    ):
+    ) -> dict:
         return {
             resource_id: resource_windows_dict[resource_id]
             for resource_id in resource_windows_dict.keys()

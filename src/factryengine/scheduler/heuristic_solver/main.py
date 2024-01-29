@@ -67,21 +67,19 @@ class HeuristicSolver:
                 unscheduled_tasks.append(task_id)
                 continue
 
-            resource_windows_min_max = self.min_max_dict_np(
-                allocated_resource_windows_dict
-            )
-
             # update resource windows
-            self.window_manager.update_resource_windows(resource_windows_min_max)
+            self.window_manager.update_resource_windows(allocated_resource_windows_dict)
 
             # Append task values
             task_values = {
                 "task_id": task_id,
                 "assigned_resource_ids": list(allocated_resource_windows_dict.keys()),
                 "task_start": min(
-                    start for start, _ in resource_windows_min_max.values()
+                    start for start, _ in allocated_resource_windows_dict.values()
                 ),
-                "task_end": max(end for _, end in resource_windows_min_max.values()),
+                "task_end": max(
+                    end for _, end in allocated_resource_windows_dict.values()
+                ),
                 "resource_intervals": allocated_resource_windows_dict.values(),
             }
             self.task_vars[task_id] = task_values
@@ -105,17 +103,3 @@ class HeuristicSolver:
             task_ends.append(task_end + task.predecessor_delay)
 
         return max(task_ends, default=0)
-
-    def min_max_dict_np(self, d: dict) -> dict:
-        """
-        For each key in the input dictionary, finds the minimum of the first elements
-        and the maximum of the second elements in the associated list of tuples.
-        """
-        result = {}
-
-        for key, value_list in d.items():
-            min_val = np.min([x[0] for x in value_list])
-            max_val = np.max([x[1] for x in value_list])
-            result[key] = (min_val, max_val)
-
-        return result
