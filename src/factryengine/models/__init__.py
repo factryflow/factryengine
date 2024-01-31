@@ -1,2 +1,2 @@
-from .resource import Resource, Team
+from .resource import Resource, ResourceGroup
 from .task import Assignment, Task

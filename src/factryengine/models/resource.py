@@ -51,14 +51,9 @@ class Resource(BaseModel):
         ]
 
 
-class Team(BaseModel):
-    name: str
-    resources: list[Resource] = Field(..., min_items=1)
+class ResourceGroup(BaseModel):
+    resources: set[Resource] = Field(..., min_items=1)
 
-    def __hash__(self):
-        return hash(self.name)
-
-    def __eq__(self, other):
-        if isinstance(other, Team):
-            return self.name == other.name
-        return False
+    def get_resource_ids(self) -> tuple[int]:
+        """returns a tuple of resource ids"""
+        return tuple([resource.id for resource in self.resources])

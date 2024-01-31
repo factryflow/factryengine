@@ -1,2 +1,2 @@
-from .models import Assignment, Resource, Task, Team
+from .models import Assignment, Resource, ResourceGroup, Task
 from .scheduler.core import Scheduler
