@@ -1,13 +1,54 @@
-from collections import namedtuple
-from itertools import compress
+from dataclasses import dataclass
+from math import ceil
 
 import numpy as np
 
-from factryengine.models import Assignment
+from factryengine.models import Assignment, ResourceGroup
 
 from .exceptions import AllocationError
 
-Matrix = namedtuple("Matrix", ["resource_ids", "matrix"])
+
+# matrix dataclass
+@dataclass
+class Matrix:
+    resource_ids: np.ndarray  # 1d array of resource ids
+    intervals: np.ndarray  # 1d array of intervals
+    resource_matrix: np.ma.core.MaskedArray  # 2d array of resource windows
+
+    @classmethod
+    def merge(cls, matrices: list["Matrix"]) -> "Matrix":
+        """
+        merges a list of matrices into one matrix.
+        """
+        resource_ids = np.concatenate([matrix.resource_ids for matrix in matrices])
+
+        # Check if intervals are the same
+        first_intervals = matrices[0].intervals
+        if any(
+            not np.array_equal(first_intervals, matrix.intervals) for matrix in matrices
+        ):
+            raise ValueError("All matrices must have the same intervals")
+
+        resource_matrix = np.ma.hstack([matrix.resource_matrix for matrix in matrices])
+        return cls(resource_ids, first_intervals, resource_matrix)
+
+    @classmethod
+    def compare_update_mask_and_merge(cls, matrices: list["Matrix"]) -> "Matrix":
+        """
+        Compares each row of each array in the list and masks the rows with smallest sums.
+        Returns the combined array with the masked rows.
+        """
+        row_sums = [
+            np.sum(matrix.resource_matrix, axis=1, keepdims=True) for matrix in matrices
+        ]
+        max_sum_index = np.argmax(np.hstack(row_sums), axis=1)
+
+        # update the masks
+        for i, matrix in enumerate(matrices):
+            mask = np.ones_like(matrix.resource_matrix) * (max_sum_index[:, None] != i)
+            matrix.resource_matrix.mask = mask
+
+        return cls.merge(matrices)
 
 
 class TaskAllocator:
@@ -21,114 +62,110 @@ class TaskAllocator:
         allocates a task to the resources with the fastest completion based on the resource windows dict.
         Assignments determine which resources and how many.
         """
-        # initialize task allocated windows
-        task_allocated_windows = {}
 
+        # create resource matrix
+        base_resource_matrix = self._create_base_resource_matrix(resource_windows_dict)
+
+        assignment_matrices = []
         for assignment in assignments:
-            # create resource matrix
-            resource_matrix = self._create_resource_coordinates_matrix(
-                resource_windows_dict
-            )
-
-            # create assignment matrix from resource matrix
-            assignment_matrix = self._create_assignment_matrix(
-                assignment, resource_matrix
-            )
-
-            # find solution using assignment matrix
-            solution_matrix, solution_resource_ids = self._solve_matrix(
-                matrix=assignment_matrix,
-                task_duration=task_duration,
-                resource_count=assignment.entity_count,
-            )
-
-            # get allocated windows
-            assignment_allocated_windows = self._get_resource_intervals(
-                solution_matrix, solution_resource_ids, resource_matrix
-            )
-
-            # update task allocated windows
-            task_allocated_windows.update(assignment_allocated_windows)
-
-            # check if not last iteration
-            if assignment != assignments[-1]:
-                # update remove resource ids from resource windows dict
-                solution_resource_ids_flattend = self._flatten_list_of_tuples(
-                    solution_resource_ids
+            resource_group_matrices = []
+            for resource_group in assignment.resource_groups:
+                resource_group_matrix = self._create_resource_group_matrix(
+                    resource_group=resource_group,
+                    resource_count=assignment.resource_count,
+                    matrix=base_resource_matrix,
                 )
-                resource_windows_dict = self._update_resource_windows_dict(
-                    resource_windows_dict, solution_resource_ids_flattend
-                )
-        return task_allocated_windows
+
+                resource_group_matrices.append(resource_group_matrix)
+            assignment_matrix = Matrix.compare_update_mask_and_merge(
+                resource_group_matrices
+            )
+            assignment_matrices.append(assignment_matrix)
+
+        task_matrix = Matrix.merge(assignment_matrices)
+        solution_matrix = self._solve_matrix(task_matrix, task_duration)
+
+        allocated_windows = self._get_resource_intervals(
+            solution_matrix=solution_matrix, resource_matrix=base_resource_matrix
+        )
+
+        return allocated_windows
 
     def _solve_matrix(
         self,
         matrix: Matrix,
         task_duration: float,
-        resource_count: int,
     ) -> (dict[int, np.array], list[tuple[int]]):
         """
         Finds the earliest possible solution for a given task based on its duration and
         the number of resources available. The method uses a matrix representation of
         the resource windows to calculate the optimal allocation of the task.
         """
-        resource_ids = matrix.resource_ids
-        matrix = matrix.matrix
-
-        resource_matrix = matrix[:, 1:]
 
         # check if task duration is greater than the maximum resource duration
-        if resource_count == 1 and task_duration > resource_matrix.max():
-            raise AllocationError(
-                f"Task duration {task_duration} is greater than the maximum resource "
-                f"duration {resource_matrix.max()}."
-            )
+        # if resource_count == 1 and task_duration > matrix.resource_matrix.max():
+        #     raise AllocationError(
+        #         f"Task duration {task_duration} is greater than the maximum resource "
+        #         f"duration {matrix.resource_matrix.max()}."
+        #     )
 
-        # mask all but the k largest elements per row
-        masked_resource_matrix = self._mask_smallest_elements_except_top_k_per_row(
-            resource_matrix, resource_count
-        )
-
-        arr_sum = np.sum(masked_resource_matrix, axis=1)
+        row_sums = np.sum(matrix.resource_matrix, axis=1)
 
         # check if task duration is greater than the maximum resource duration
-        if task_duration > arr_sum.max():
+        if task_duration > row_sums.max():
             raise AllocationError(
                 f"Task duration {task_duration} is greater than the maximum resource "
-                f"duration {arr_sum.max()}."
+                f"duration {row_sums.max()}."
             )
 
         # get solution index and resource ids
-        solution_index = np.argmax(arr_sum >= task_duration)
-        solution_resources_mask = ~masked_resource_matrix.mask[solution_index]
+        solution_index = np.argmax(row_sums >= task_duration)
+        solution_resources_mask = ~matrix.resource_matrix.mask[solution_index]
         # filter resource ids using solution resource mask
-        solution_resource_ids = list(compress(resource_ids, solution_resources_mask))
+        solution_resource_ids = matrix.resource_ids[solution_resources_mask]
 
         # solve matrix
         # build matrix which has the solution
 
         # include first column in solution
-        solution_cols_mask = np.concatenate([[True], solution_resources_mask])
+        # solution_cols_mask = np.concatenate([[True], solution_resources_mask])
 
         # select solution data + 1 row to do linear regression
-        solution_matrix = matrix[: solution_index + 1, solution_cols_mask]
+        solution_resource_matrix = matrix.resource_matrix[
+            : solution_index + 1, solution_resources_mask
+        ]
 
         # do linear regression to find precise solution
-        solution = self._solve_task_end(solution_matrix[-2:], task_duration)
+        interval, solution_row = self._solve_task_end(
+            resource_matrix=solution_resource_matrix[-2:],
+            intervals=matrix.intervals[: solution_index + 1][-2:],
+            task_duration=task_duration,
+        )
 
         # add solution to solution matrix
-        solution_matrix = np.vstack(
-            (solution_matrix[:solution_index], np.atleast_2d(solution))
+        solution_resource_matrix = np.vstack(
+            (solution_resource_matrix[:solution_index], np.atleast_2d(solution_row))
         )
-        return solution_matrix, solution_resource_ids
+        solution_intervals = np.append(matrix.intervals[:solution_index], interval)
 
-    def _solve_task_end(self, matrix: np.array, task_duration: int) -> np.array:
+        return Matrix(
+            resource_ids=solution_resource_ids,
+            intervals=solution_intervals,
+            resource_matrix=solution_resource_matrix,
+        )
+
+    def _solve_task_end(
+        self,
+        resource_matrix: np.ma.MaskedArray,
+        intervals: np.ndarray,
+        task_duration: int,
+    ) -> np.array:
         # Calculate slopes and intercepts for all columns after the first one directly
         # into total_m and total_b
         total_m, total_b = 0, 0
         mb_values = []
-        for i in range(1, matrix.shape[1]):
-            m, b = np.polyfit(matrix[:, 0], matrix[:, i], 1)
+        for i in range(0, resource_matrix.shape[1]):
+            m, b = np.polyfit(x=intervals, y=resource_matrix[:, i], deg=1)
             total_m += m
             total_b += b
             mb_values.append((m, b))
@@ -142,9 +179,7 @@ class TaskAllocator:
 
         # Return a numpy array containing the solved value for column 0 and the
         # predicted values for the other columns
-        result = np.array([col0] + other_cols)
-
-        return result
+        return col0, other_cols
 
     def _find_last_zero_index(self, arr):
         """
@@ -166,29 +201,25 @@ class TaskAllocator:
     def _get_resource_intervals(
         self,
         solution_matrix: np.array,
-        resource_ids: list[tuple[int]],
         resource_matrix: Matrix,
     ) -> dict[int, tuple[float, float]]:
         """
         gets the resource intervals from the solution matrix.
         """
-        end_index = solution_matrix.shape[0] - 1
+        end_index = solution_matrix.resource_matrix.shape[0] - 1
 
         resource_windows_dict = {}
 
-        for group_resource_ids in resource_ids:
-            for resource_id in group_resource_ids:
-                resource_column = resource_matrix.resource_ids.index(resource_id) + 1
-                resource_durations = resource_matrix.matrix[
-                    : end_index + 1, resource_column
-                ].T
-                start_index = self._find_last_zero_index(resource_durations)
+        for resource_id in solution_matrix.resource_ids:
+            resource_column = (resource_matrix.resource_ids == resource_id).argmax()
+            resource_durations = resource_matrix.resource_matrix[:, resource_column].T
+            start_index = self._find_last_zero_index(resource_durations)
 
-                if start_index is not None:
-                    resource_windows_dict[resource_id] = (
-                        solution_matrix[start_index, 0],
-                        solution_matrix[end_index, 0],
-                    )
+            if start_index is not None:
+                resource_windows_dict[resource_id] = (
+                    ceil(round(solution_matrix.intervals[start_index], 1)),
+                    ceil(round(solution_matrix.intervals[end_index], 1)),
+                )
 
         return resource_windows_dict
 
@@ -204,7 +235,7 @@ class TaskAllocator:
         return
 
     def _mask_smallest_elements_except_top_k_per_row(
-        self, array, k
+        self, array: np.ma.core.MaskedArray, k
     ) -> np.ma.core.MaskedArray:
         """
         Masks the smallest elements in an array, except for the k largest elements on
@@ -216,8 +247,8 @@ class TaskAllocator:
         rows = np.arange(array.shape[0])[:, np.newaxis]
         mask[rows, indices[:, -k:]] = False
         mask[array == 0] = True
-        masked_array = np.ma.masked_array(array, mask=mask)
-        return masked_array
+        array.mask = mask
+        return array
 
     def _cumsum_reset_at_minus_one(self, a: np.ndarray) -> np.ndarray:
         """
@@ -271,7 +302,7 @@ class TaskAllocator:
         result_array[mask] = array
         return result_array
 
-    def _create_resource_coordinates_matrix(
+    def _create_base_resource_matrix(
         self, windows_dict: dict[int, np.ndarray]
     ) -> Matrix:
         windows = np.array(list(windows_dict.values()))
@@ -296,49 +327,48 @@ class TaskAllocator:
 
         coordinates = np.dstack((columns))
         coordinates_nan_filled = self._interpolate_y_values(coordinates)
+        final = np.ma.MaskedArray(coordinates_nan_filled[0])
+        resource_ids = np.array(list(windows_dict.keys()))
         return Matrix(
-            resource_ids=list(windows_dict.keys()), matrix=coordinates_nan_filled[0]
+            resource_ids=resource_ids,
+            intervals=final[:, 0].data,
+            resource_matrix=final[:, 1:],
         )
 
-    def _create_assignment_matrix(
-        self, assignment: Assignment, matrix: Matrix
+    def _create_resource_group_matrix(
+        self,
+        resource_group: ResourceGroup,
+        resource_count: int,
+        matrix: Matrix,
     ) -> Matrix:
         """Create the matrices for the resource groups in the assignment"""
 
-        matrix_durations = matrix.matrix[:, 1:]
-        output_matrix = matrix.matrix[:, [0]]
-        resource_ids: list[tuple[int]] = []
+        resource_ids = np.array(resource_group.get_resource_ids())
 
-        for group_resource_ids in assignment.get_resource_ids():
-            # Check if the team resources exist in the matrix resource ids else skip
-            if not set(group_resource_ids).issubset(set(matrix.resource_ids)):
-                continue
-
-            # Get the indices of the team resources in the matrix resource ids
-            columns = [
-                matrix.resource_ids.index(resource_id)
-                for resource_id in group_resource_ids
-            ]
-
-            group_matrix = matrix_durations[:, columns]
-
-            # Sum the group matrix if there are multiple resources in the group
-            if len(group_resource_ids) > 1:
-                group_matrix = np.sum(group_matrix, axis=1, keepdims=True)
-
-            # Add the team matrix to the output matrix
-            output_matrix = np.hstack((output_matrix, group_matrix))
-
-            resource_ids.append(group_resource_ids)
-
-        # check if the required entity count is met
-        if assignment.entity_count > output_matrix.shape[1] - 1:
+        # find the resources that exist in the resource matrix
+        available_resources = np.intersect1d(resource_ids, matrix.resource_ids)
+        if len(available_resources) < resource_count:
             raise AllocationError(
-                f"Assignment {assignment.id} requires {assignment.entity_count} "
-                f"entities but only {output_matrix.shape[1] - 1} are available."
+                f"Assignment {resource_group.id} requires {resource_count} "
+                f"entities but only {len(available_resources)} are available."
             )
 
-        return Matrix(resource_ids=resource_ids, matrix=output_matrix)
+        # Find the indices of the available resources in the resource matrix
+        columns = np.where(np.isin(resource_ids, available_resources))[0]
+
+        # Build the resource_matrix for the resource group matrix
+        resource_matrix = matrix.resource_matrix[:, columns]
+
+        # mask all but the k largest elements per row
+        resource_matrix_masked = self._mask_smallest_elements_except_top_k_per_row(
+            resource_matrix, resource_count
+        )
+
+        return Matrix(
+            resource_ids=resource_ids,
+            intervals=matrix.intervals,
+            resource_matrix=resource_matrix_masked,
+        )
 
     def _update_resource_windows_dict(
         self, resource_windows_dict: dict, solution_resource_ids: list
@@ -351,3 +381,20 @@ class TaskAllocator:
 
     def _flatten_list_of_tuples(self, list_of_tuples):
         return [item for sublist in list_of_tuples for item in sublist]
+
+    def _compare_and_mask_arrays(
+        self, arrays: list[np.ndarray]
+    ) -> np.ma.core.MaskedArray:
+        """
+        Compares each row of each array in the list and masks the rows with smallest sums.
+        Returns the combined array with the masked rows.
+        """
+        sums = [np.sum(arr, axis=1, keepdims=True) for arr in arrays]
+        max_sum_index = np.argmax(np.hstack(sums), axis=1)
+
+        masked_arrays = []
+        for i, arr in enumerate(arrays):
+            mask = np.ones_like(arr) * (max_sum_index[:, None] != i)
+            masked_arrays.append(np.ma.masked_array(arr, mask=mask))
+
+        return np.ma.hstack(masked_arrays)
