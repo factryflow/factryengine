@@ -35,16 +35,16 @@ class HeuristicSolver:
         for task_id in self.task_order:
             task = self.task_dict[task_id]
 
-            # get task resources and windows dict
-            task_resource_ids = np.array(
-                [resource.id for resource in task.get_unique_resources()]
-            )
-
             task_earliest_start = self._get_task_earliest_start(task, self.task_dict)
 
             if task_earliest_start is None:
                 unscheduled_tasks.append(task_id)
                 continue
+
+            # get task resources and windows dict
+            task_resource_ids = np.array(
+                [resource.id for resource in task.get_unique_resources()]
+            )
 
             task_resource_windows_dict = (
                 self.window_manager.get_task_resource_windows_dict(
