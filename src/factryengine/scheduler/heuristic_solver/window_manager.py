@@ -2,6 +2,13 @@ import numpy as np
 
 from ...models.resource import Resource
 
+window_dtype = [
+    ("start", np.float32),
+    ("end", np.float32),
+    ("duration", np.float32),
+    ("is_split", np.int32),
+]
+
 
 class WindowManager:
     def __init__(self, resources: list[Resource]):
@@ -62,16 +69,8 @@ class WindowManager:
         # Convert the list of windows to a numpy array
         arr = np.array(windows)
 
-        # Define the dtype for the structured array
-        dtype = [
-            ("start", np.float32),
-            ("end", np.float32),
-            ("duration", np.float32),
-            ("is_split", np.int32),
-        ]
-
         # Create an empty structured array with the specified dtype
-        result = np.zeros(arr.shape[0], dtype=dtype)
+        result = np.zeros(arr.shape[0], dtype=window_dtype)
 
         # Fill the 'start' and 'end' fields with the first and second columns of 'arr', respectively
         result["start"], result["end"] = arr[:, 0], arr[:, 1]
