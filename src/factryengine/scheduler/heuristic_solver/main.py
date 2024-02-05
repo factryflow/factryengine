@@ -62,6 +62,7 @@ class HeuristicSolver:
                     resource_windows_dict=task_resource_windows_dict,
                     assignments=task.assignments,
                     task_duration=task.duration,
+                    constraints=task.constraints,
                 )
             except AllocationError:
                 unscheduled_tasks.append(task_id)

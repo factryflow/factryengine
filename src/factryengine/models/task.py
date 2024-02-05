@@ -57,23 +57,14 @@ class Assignment(BaseModel):
         return unique_resources
 
 
-class Constraint(Assignment):
-    """
-    Constraints are required for the entire duration of the task but do not speed up the task,
-    could be a machine or equipment
-    """
-
-    pass
-
-
 class Task(BaseModel):
     id: int
     name: str = ""
     duration: int = Field(gt=0)
     priority: int = Field(gt=0)
-    assignments: list[Assignment] = Field(..., min_items=1)
-    constraints: list[Constraint] = []
-    predecessor_ids: list[int] = []
+    assignments: list[Assignment] = []
+    constraints: set[Resource] = set()
+    predecessor_ids: set[int] = set()
     predecessor_delay: int = Field(0, gt=0)
     quantity: int = Field(None, gt=0)
 
@@ -85,15 +76,19 @@ class Task(BaseModel):
             return self.id == other.id
         return False
 
+    @model_validator(mode="after")
+    def check_assigments_or_constraints_are_set(self):
+        if not self.assignments and not self.constraints:
+            raise ValueError("Either assignments or constraints must be set")
+        return self
+
     def get_unique_resources(self) -> set[Resource]:
         """returns a set of all unique resources required for the task"""
-        return set(
-            [
-                resource
-                for assignment in self.assignments
-                for resource in assignment.get_unique_resources()
-            ]
-        )
+        unique_resources = set()
+        for assignment in self.assignments:
+            unique_resources.update(assignment.get_unique_resources())
+        unique_resources.update(self.constraints)
+        return unique_resources
 
     @validator("name", pre=True, always=True)
     def set_name(cls, v, values) -> str:
