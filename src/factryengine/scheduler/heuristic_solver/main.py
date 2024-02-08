@@ -29,8 +29,9 @@ class HeuristicSolver:
             }
             for task_id in self.task_dict.keys()
         }
+        self.unscheduled_task_ids = []
 
-    def solve(self) -> list:
+    def solve(self) -> list[dict]:
         """
         Iterates through the task order and allocates resources to each task
         """
@@ -40,7 +41,9 @@ class HeuristicSolver:
             task_earliest_start = self._get_task_earliest_start(task, self.task_dict)
 
             if task_earliest_start is None:
-                self._update_error_message(task_id, "Task has unscheduled predecessors")
+                self.mark_task_as_unscheduled(
+                    task_id=task_id, error_message="Task has unscheduled predecessors"
+                )
                 continue
 
             # get task resources and windows dict
@@ -55,7 +58,9 @@ class HeuristicSolver:
             )
 
             if task_resource_windows_dict == {}:
-                self._update_error_message(task_id, "No available resources")
+                self.mark_task_as_unscheduled(
+                    task_id=task_id, error_message="No available resources"
+                )
                 continue
 
             # allocate task
@@ -67,8 +72,7 @@ class HeuristicSolver:
                     constraints=task.constraints,
                 )
             except AllocationError as e:
-                # unscheduled_tasks.append(task_id)
-                self._update_error_message(task_id, str(e))
+                self.mark_task_as_unscheduled(task_id=task_id, error_message=str(e))
                 continue
 
             # update resource windows
@@ -108,9 +112,10 @@ class HeuristicSolver:
 
         return max(task_ends, default=0)
 
-    def _update_error_message(self, task_id: str, message: str) -> None:
+    def mark_task_as_unscheduled(self, task_id: str, error_message: str) -> None:
         """
         Updates the error message of a task
         """
-        self.task_vars[task_id]["error_message"] = message
+        self.task_vars[task_id]["error_message"] = error_message
+        self.unscheduled_task_ids.append(task_id)
         return
