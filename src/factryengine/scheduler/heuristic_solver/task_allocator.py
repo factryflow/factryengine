@@ -293,6 +293,7 @@ class TaskAllocator:
         self,
         resource_group: ResourceGroup,
         resource_count: int,
+        use_all_resources: bool,
         resource_windows_matrix: Matrix,
     ) -> Matrix:
         """
@@ -305,13 +306,9 @@ class TaskAllocator:
         available_resources = np.intersect1d(
             resource_ids, resource_windows_matrix.resource_ids
         )
-
-        # check if there are enough resources available
-        if len(available_resources) < resource_count:
-            raise AllocationError(
-                f"Assignment {resource_group.id} requires {resource_count} "
-                f"entities but only {len(available_resources)} are available."
-            )
+        available_resources_count = len(available_resources)
+        if available_resources_count == 0:
+            return None
 
         # Find the indices of the available resources in the windows matrix
         resource_indexes = np.where(
@@ -321,17 +318,19 @@ class TaskAllocator:
         # Build the resource_matrix for the resource group matrix
         resource_matrix = resource_windows_matrix.resource_matrix[:, resource_indexes]
         # compute the cumulative sum of the resource matrix columns
-        resource_matrix_cumsum = self._cumsum_reset_at_minus_one_2d(resource_matrix)
+        resource_matrix = self._cumsum_reset_at_minus_one_2d(resource_matrix)
 
         # mask all but the k largest elements per row
-        resource_matrix_masked = self._mask_smallest_elements_except_top_k_per_row(
-            resource_matrix_cumsum, resource_count
-        )
+        if use_all_resources is False:
+            if resource_count < available_resources_count:
+                resource_matrix = self._mask_smallest_elements_except_top_k_per_row(
+                    resource_matrix, resource_count
+                )
 
         return Matrix(
             resource_ids=resource_ids,
             intervals=resource_windows_matrix.intervals,
-            resource_matrix=resource_matrix_masked,
+            resource_matrix=resource_matrix,
         )
 
     def _create_constraints_matrix(
@@ -414,10 +413,16 @@ class TaskAllocator:
                 resource_group_matrix = self._create_resource_group_matrix(
                     resource_group=resource_group,
                     resource_count=assignment.resource_count,
+                    use_all_resources=assignment.use_all_resources,
                     resource_windows_matrix=resource_windows_matrix,
                 )
+                if resource_group_matrix is None:
+                    continue
 
                 resource_group_matrices.append(resource_group_matrix)
+
+            if resource_group_matrices == []:
+                raise AllocationError("No resource groups with available resources.")
 
             # keep resource group matrix rows with the fastest completion
             assignment_matrix = Matrix.compare_update_mask_and_merge(
@@ -430,7 +435,7 @@ class TaskAllocator:
 
         # check if solution exists
         if not np.any(assignments_matrix.resource_matrix >= task_duration):
-            raise AllocationError("No solution for the resource constraints")
+            raise AllocationError("No solution found.")
 
         return assignments_matrix
 
