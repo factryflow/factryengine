@@ -25,20 +25,22 @@ class HeuristicSolver:
                 "task_start": None,
                 "task_end": None,
                 "resource_intervals": None,
+                "error_message": None,
             }
             for task_id in self.task_dict.keys()
         }
 
-    def solve(self):
-        unscheduled_tasks = []
-
+    def solve(self) -> list:
+        """
+        Iterates through the task order and allocates resources to each task
+        """
         for task_id in self.task_order:
             task = self.task_dict[task_id]
 
             task_earliest_start = self._get_task_earliest_start(task, self.task_dict)
 
             if task_earliest_start is None:
-                unscheduled_tasks.append(task_id)
+                self._update_error_message(task_id, "Task has unscheduled predecessors")
                 continue
 
             # get task resources and windows dict
@@ -53,7 +55,7 @@ class HeuristicSolver:
             )
 
             if task_resource_windows_dict == {}:
-                unscheduled_tasks.append(task_id)
+                self._update_error_message(task_id, "No available resources")
                 continue
 
             # allocate task
@@ -64,8 +66,9 @@ class HeuristicSolver:
                     task_duration=task.duration,
                     constraints=task.constraints,
                 )
-            except AllocationError:
-                unscheduled_tasks.append(task_id)
+            except AllocationError as e:
+                # unscheduled_tasks.append(task_id)
+                self._update_error_message(task_id, str(e))
                 continue
 
             # update resource windows
@@ -104,3 +107,10 @@ class HeuristicSolver:
             task_ends.append(task_end + task.predecessor_delay)
 
         return max(task_ends, default=0)
+
+    def _update_error_message(self, task_id: str, message: str) -> None:
+        """
+        Updates the error message of a task
+        """
+        self.task_vars[task_id]["error_message"] = message
+        return
