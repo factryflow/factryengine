@@ -11,34 +11,20 @@ class Assignment(BaseModel):
     """
 
     resource_groups: list[ResourceGroup] = Field(..., min_items=1)
-    resource_count: int = Field(None, gt=0)
+    resource_count: int = Field(None)
     use_all_resources: bool = Field(
         False, description="will use all resources available"
     )
 
     @model_validator(mode="after")
     def check_valid_combinations(self):
-        combinations_count = sum(
-            [bool(self.resource_count), bool(self.use_all_resources)]
-        )
-        if combinations_count == 0:
+        if self.resource_count is None and self.use_all_resources is False:
             raise ValueError("Either resource_count or use_all_resources must be set")
-        if combinations_count > 1:
-            raise ValueError("Only define one of resource_count or use_all_resources")
-        return self
 
-    @validator("resource_count", always=True)
-    def check_resource_availability(cls, value, values):
-        resource_groups = values.get("resource_groups")
-        if resource_groups:
-            total_available_resources = sum(
-                len(group.resources) for group in resource_groups
-            )
-            if value > total_available_resources:
-                raise ValueError(
-                    "resource_count exceeds the total available resources in resource_groups"
-                )
-        return value
+        if self.resource_count:
+            if self.resource_count < 1:
+                raise ValueError("resource_count must be greater than 0")
+        return self
 
     def get_resource_ids(self) -> list[tuple[int]]:
         """returns a list of tuples of resource ids for each resource group in the assignment"""
