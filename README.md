@@ -1,4 +1,4 @@
-# ⚙️ factryengine
+# 📅 factryengine
 
 `factryengine` is a high-speed Python package for effortless and efficient task scheduling, specifically tailored for production scheduling. Built with `numpy`, it ensures tasks are executed in the correct order while considering their priorities, resources, and dependencies.
 
@@ -12,12 +12,12 @@ pip install factryengine
 
 ## 🌟 Features
 
-- **Fast Performance**: Built with `numpy` for high-speed task scheduling.
-- **Production Scheduling**: Specifically designed for seamless production scheduling.
-- **Simple Task Creation**: Easily define tasks with attributes like duration, priority, and resources.
-- **Resource Management**: Assign resources with availability windows to tasks.
-- **Task Dependencies**: Ensure tasks that depend on others are scheduled in the correct order.
-- **Efficient Scheduling**: Automatically schedule tasks while considering their priorities and dependencies.
+- ⚡ **Fast Performance**: Built with `numpy` for high-speed task scheduling.
+- 🏭 **Production Scheduling**: Specifically designed for seamless production scheduling.
+- 📝 **Simple Task Creation**: Easily define tasks with attributes like duration, priority, and resources.
+- 🛠️ **Resource Management**: Assign resources with availability windows to tasks.
+- 🔄 **Task Dependencies**: Ensure tasks that depend on others are scheduled in the correct order.
+- 📅 **Efficient Scheduling**: Automatically schedule tasks while considering their priorities and dependencies.
 
 ## 🚀 Quick Start
 
@@ -50,4 +50,4 @@ Contributions, issues, and feature requests are welcome!
 
 ## 📝 License
 
-This project is [MIT](link_to_license) licensed.
+This project is [MIT](../LICENSE) licensed.
