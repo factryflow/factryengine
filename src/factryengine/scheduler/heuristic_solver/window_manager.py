@@ -111,21 +111,31 @@ class WindowManager:
         )  # Compute slopes for all overlap_windows
 
         window = self._handle_mask_between(
-            window,
-            overlap_intervals,
-            mask_between,
-            slopes,
-            trim_start,
-            trim_end,
-            start_idx,
-            end_idx,
+            windows=window,
+            overlap_windows=overlap_intervals,
+            mask_between=mask_between,
+            slopes=slopes,
+            trim_start=trim_start,
+            trim_end=trim_end,
+            start_idx=start_idx,
+            end_idx=end_idx,
         )
-        window = self._handle_mask(
-            window, overlap_intervals, mask_end, trim_start, "end", end_idx
+
+        window = self._handle_mask_start(
+            windows=window,
+            overlap_windows=overlap_intervals,
+            mask_start=mask_start,
+            trim_end=trim_end,
         )
-        window = self._handle_mask(
-            window, overlap_intervals, mask_start, trim_end, "start"
+
+        window = self._handle_mask_end(
+            windows=window,
+            overlap_windows=overlap_intervals,
+            mask_end=mask_end,
+            trim_start=trim_start,
+            end_idx=end_idx,
         )
+
         window = self._delete_overlapped_windows(
             window, mask_delete, start_idx, end_idx
         )
@@ -153,49 +163,76 @@ class WindowManager:
         Handles the case where mask_between is True.
         """
         if np.any(mask_between):
+            # Get the slopes between the mask
             slopes_between = slopes[mask_between]
+
+            # Duplicate the overlap windows
             overlap_windows = np.concatenate([overlap_windows, overlap_windows])
+
+            # Update the end and duration of the first overlap window
             overlap_windows[0]["end"] = trim_start
             overlap_windows[0]["duration"] = (
                 overlap_windows[0]["end"] - overlap_windows[0]["start"]
             ) * slopes_between
 
+            # Update the end, duration, and is_split of the second overlap window
             overlap_windows[1]["end"] = trim_end
             overlap_windows[1]["duration"] = (
                 overlap_windows[1]["end"] - overlap_windows[1]["start"]
             ) * slopes_between
             overlap_windows[1]["is_split"] = -1
 
-            return np.concatenate(
+            # Concatenate the windows before the start index, the overlap windows, and the windows after the end index
+            final_windows = np.concatenate(
                 (windows[:start_idx], overlap_windows, windows[end_idx:])
             )
 
+            return final_windows
+
         return windows
 
-    def _handle_mask(
+    def _handle_mask_start(
         self,
         windows: np.ndarray,
         overlap_windows: np.ndarray,
-        mask: np.ndarray,
-        trim_value: int,
-        field: str,
-        end_idx: int = None,
+        mask_start: np.ndarray,
+        trim_end: int,
     ) -> np.ndarray:
         """
-        Handles the case where mask is True.
+        Handles the case where mask_start is True.
         """
-        if np.any(mask):
-            overlap_windows[mask][field] = trim_value
-            overlap_windows[mask]["duration"] = (
-                overlap_windows[mask]["end"] - overlap_windows[mask]["start"]
+        if np.any(mask_start):
+            # Update "start" field
+            overlap_windows["start"][mask_start] = trim_end
+
+            # Update "duration" field based on updated "start" and existing "end"
+            overlap_windows["duration"][mask_start] = (
+                overlap_windows["end"][mask_start] - trim_end
             )
-            if field == "end" and end_idx is not None:
-                end_idx_temp = min(
-                    end_idx, windows.shape[0] - 1
-                )  # handle out of bounds
-                windows[end_idx_temp]["is_split"] = -1
-            else:
-                overlap_windows[mask]["is_split"] = -1
+
+            # Update "is_split" field
+            overlap_windows["is_split"][mask_start] = -1
+
+        return windows
+
+    def _handle_mask_end(
+        self,
+        windows: np.ndarray,
+        overlap_windows: np.ndarray,
+        mask_end: np.ndarray,
+        trim_start: int,
+        end_idx: int,
+    ) -> np.ndarray:
+        """
+        Handles the case where mask_end is True.
+        """
+        if np.any(mask_end):
+            overlap_windows["end"][mask_end] = trim_start
+            overlap_windows["duration"][mask_end] = (
+                trim_start - overlap_windows["start"][mask_end]
+            )
+            end_idx_temp = min(end_idx, windows.shape[0] - 1)  # handle out of bounds
+            windows["is_split"][end_idx_temp] = -1
 
         return windows
 
