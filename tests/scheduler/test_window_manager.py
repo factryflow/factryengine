@@ -7,6 +7,8 @@ from factryengine.scheduler.heuristic_solver.window_manager import WindowManager
 resource1 = Resource(id=1, available_windows=[(1, 5), (7, 9)])
 resource2 = Resource(id=2, available_windows=[(2, 6), (8, 10)])
 resources = [resource1, resource2]
+window_dtype = [("start", int), ("end", int), ("duration", int), ("is_split", int)]
+
 
 # Test WindowManager
 window_manager = WindowManager(resources)
@@ -14,13 +16,13 @@ window_manager = WindowManager(resources)
 
 # Test case values
 test_case_values = [
-    ([resource1], {1: np.array([(1, 5, 4, 0), (7, 9, 2, 0)])}),
-    ([resource2], {2: np.array([(2, 6, 4, 0), (8, 10, 2, 0)])}),
+    ([resource1], {1: np.array([(1, 5, 4, 0), (7, 9, 2, 0)], dtype=window_dtype)}),
+    ([resource2], {2: np.array([(2, 6, 4, 0), (8, 10, 2, 0)], dtype=window_dtype)}),
     (
         resources,
         {
-            1: np.array([(1, 5, 4, 0), (7, 9, 2, 0)]),
-            2: np.array([(2, 6, 4, 0), (8, 10, 2, 0)]),
+            1: np.array([(1, 5, 4, 0), (7, 9, 2, 0)], dtype=window_dtype),
+            2: np.array([(2, 6, 4, 0), (8, 10, 2, 0)], dtype=window_dtype),
         },
     ),
 ]
@@ -30,7 +32,7 @@ test_case_values = [
 @pytest.mark.parametrize("resources, expected_output", test_case_values)
 def test_create_resource_windows_dict(resources, expected_output):
     window_manager = WindowManager(resources)
-    result = window_manager.create_resource_windows_dict()
+    result = window_manager._create_resource_windows_dict()
     for key in expected_output:
         assert np.array_equal(result[key], expected_output[key])
     assert len(result) == len(expected_output)
@@ -38,15 +40,15 @@ def test_create_resource_windows_dict(resources, expected_output):
 
 # Test case values
 test_case_values = [
-    ([(1, 5), (7, 9)], np.array([(1, 5, 4, 0), (7, 9, 2, 0)])),
-    ([(2, 6), (8, 10)], np.array([(2, 6, 4, 0), (8, 10, 2, 0)])),
+    ([(1, 5), (7, 9)], np.array([(1, 5, 4, 0), (7, 9, 2, 0)], dtype=window_dtype)),
+    ([(2, 6), (8, 10)], np.array([(2, 6, 4, 0), (8, 10, 2, 0)], dtype=window_dtype)),
 ]
 
 
 # Test the windows_to_numpy method
 @pytest.mark.parametrize("windows, expected_output", test_case_values)
 def test_windows_to_numpy(windows, expected_output):
-    assert np.array_equal(window_manager.windows_to_numpy(windows), expected_output)
+    assert np.array_equal(window_manager._windows_to_numpy(windows), expected_output)
 
 
 # # Test case values
@@ -124,5 +126,5 @@ test_case_values = [
     ids=[case[0] for case in test_case_values],
 )
 def test_trim_windows(test_name, windows, trim_interval, expected):
-    result = window_manager.trim_window(windows, trim_interval)
+    result = window_manager._trim_window(windows, trim_interval)
     assert np.array_equal(result, expected)

@@ -1,99 +1,87 @@
-from itertools import count
+from pydantic import BaseModel, Field, model_validator, validator
 
-from pydantic import BaseModel, Field, PrivateAttr, validator
+from .resource import Resource, ResourceGroup
 
-from .resource import Resource
+
+class Assignment(BaseModel):
+    """
+    Atlest one assignment is required for the entire duration of the task,
+    it could be an operator or worker. If multiple resources are assigned they
+    minimize the completion time for the task.
+    """
+
+    resource_groups: list[ResourceGroup] = Field(..., min_items=1)
+    resource_count: int = Field(None)
+    use_all_resources: bool = Field(
+        False, description="will use all resources available"
+    )
+
+    @model_validator(mode="after")
+    def check_valid_combinations(self):
+        if self.resource_count is None and self.use_all_resources is False:
+            raise ValueError("Either resource_count or use_all_resources must be set")
+
+        if self.resource_count:
+            if self.resource_count < 1:
+                raise ValueError("resource_count must be greater than 0")
+        return self
+
+    def get_resource_ids(self) -> list[tuple[int]]:
+        """returns a list of tuples of resource ids for each resource group in the assignment"""
+        resource_ids = []
+        for resource_group in self.resource_groups:
+            resource_ids.append(
+                tuple([resource.id for resource in resource_group.resources])
+            )
+        return resource_ids
+
+    def get_unique_resources(self) -> set[Resource]:
+        """returns a set of all unique resources required for the assignment"""
+        unique_resources = set()
+        for resource_group in self.resource_groups:
+            unique_resources.update(resource_group.resources)
+        return unique_resources
 
 
 class Task(BaseModel):
-    id: int | str
+    id: int
+    name: str = ""
     duration: int = Field(gt=0)
     priority: int = Field(gt=0)
-    resources: list[set[Resource]]
-    resource_count: int | str = 1
-    predecessors: list["Task"] = []
+    assignments: list[Assignment] = []
+    constraints: set[Resource] = set()
+    predecessor_ids: set[int] = set()
     predecessor_delay: int = Field(0, gt=0)
-    batch_size: int = Field(None, gt=0)
     quantity: int = Field(None, gt=0)
-    _batch_id: int = PrivateAttr(None)
-
-    @property
-    def uid(self) -> str:
-        """returns the unique id of the task"""
-        if self.batch_id is None:
-            return str(self.id)
-        else:
-            return f"{self.id}-{self.batch_id}"
-
-    @property
-    def batch_id(self):
-        """returns the batch id of the task"""
-        return self._batch_id
 
     def __hash__(self):
-        return hash(self.uid)
+        return hash(self.id)
 
     def __eq__(self, other):
         if isinstance(other, Task):
-            return self.uid == other.uid
+            return self.id == other.id
         return False
 
-    @validator("resources", pre=True)
-    def ensure_list(cls, v):
-        """ensures that the resources are in the form of a list of lists"""
-        if not isinstance(v, list):  # if a single resource object is passed
-            return [[v]]  # make it a list of list
-        if (
-            isinstance(v, list) and len(v) > 0 and not isinstance(v[0], list)
-        ):  # if a list of resources is passed
-            return [v]  # make it a list of list
-        return v  # if a list of lists is passed, return as it is
+    @model_validator(mode="after")
+    def check_assigments_or_constraints_are_set(self):
+        if not self.assignments and not self.constraints:
+            raise ValueError("Either assignments or constraints must be set")
+        return self
 
-    @validator("resource_count", always=True)
-    def set_resource_count(cls, v, values):
-        """
-        sets the resource count of the task. If resource_count is set to "all", it is
-        set to the maximum number of resources in any resource group
-        """
-        if isinstance(v, str) and v.lower() == "all":
-            if "resources" in values:
-                return max(
-                    len(resource_group) for resource_group in values["resources"]
-                )
+    def get_unique_resources(self) -> set[Resource]:
+        """returns a set of all unique resources required for the task"""
+        unique_resources = set()
+        for assignment in self.assignments:
+            unique_resources.update(assignment.get_unique_resources())
+        unique_resources.update(self.constraints)
+        return unique_resources
 
-        elif isinstance(v, int):
-            return v
-        else:
-            raise ValueError("Invalid value for resource_count.")
+    @validator("name", pre=True, always=True)
+    def set_name(cls, v, values) -> str:
+        if v == "":
+            return str(values.get("id"))
+        return v
 
-    def set_batch_id(self, batch_id):
-        """sets the batch id of the task"""
-        self._batch_id = batch_id
-
-    def get_resources(self):
-        """returns a list of all resources required for the task"""
-        return [
-            resource for resource_list in self.resources for resource in resource_list
-        ]
-
-    def get_resource_group_count(self):
-        """returns the number of resource groups required for the task"""
-        return len(self.resources)
-
-    def get_resource_group_indices(self) -> list[list[int]]:
-        """
-        returns a list of lists of indices of resources in each resource group
-        """
-        counter = count()
-        return [[next(counter) for _ in sublist] for sublist in self.resources]
-
-    def is_splittable(self):
-        """
-        Checks if the task is splittable into batches.
-        """
-        return (
-            self.batch_size is not None
-            and self.quantity is not None
-            and self.batch_size > 0
-            and self.quantity > self.batch_size
-        )
+    def get_id(self) -> int:
+        """returns the task id"""
+        return self.id

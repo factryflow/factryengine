@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-
-from factryengine.scheduler.heuristic_solver.task_allocator import TaskAllocator
+from factryengine.scheduler.heuristic_solver.task_allocator import Matrix, TaskAllocator
+from factryengine.scheduler.heuristic_solver.window_manager import window_dtype
 
 
 @pytest.fixture
@@ -9,197 +9,102 @@ def task_allocator():
     return TaskAllocator()
 
 
-def test_allocate_task_returns_expected_result(task_allocator):
-    resource_windows = [np.array([[0, 1, 1, -1], [2, 3, 1, 0]])]
-    resource_ids = np.array([1])
-    task_duration = 2
-    resource_count = 1
-    resource_group_indices = [[0]]
-    result = task_allocator.allocate_task(
-        resource_windows=resource_windows,
-        resource_ids=resource_ids,
-        task_duration=task_duration,
-        resource_count=resource_count,
-        resource_group_indices=resource_group_indices,
+def test_can_allocate_task():
+    pass
+
+
+def test_solve_matrix():
+    pass
+
+
+def test_solve_task_end(task_allocator):
+    resource_matrix = np.ma.array([[0, 0], [10, 10]])
+    intervals = np.array([0, 10])
+    task_duration = 10
+    result_x, result_y = task_allocator._solve_task_end(
+        resource_matrix, intervals, task_duration
     )
-    # Check if the result is a dictionary
-    assert isinstance(result, dict)
-    # Check if the result has the correct keys (allocated resources)
-    assert list(result.keys()) == [1]
-    # Validate a specific element in the result (replace with your expected values)
-    assert result == {1: [(0.0, 1.0), (2.0, 3.0)]}
+    assert result_x == 5
+    assert np.array_equal(result_y, np.array([5, 5]))
 
 
-def test_allocate_task_returns_none_when_no_solution(task_allocator):
-    resource_windows = [np.array([[0, 1, 1, -1], [2, 3, 1, 0]])]
-    resource_ids = np.array([1])
-    task_duration = 4
-    resource_count = 1
-    resource_group_indices = [[0]]
-    result = task_allocator.allocate_task(
-        resource_windows=resource_windows,
-        resource_ids=resource_ids,
-        task_duration=task_duration,
-        resource_count=resource_count,
-        resource_group_indices=resource_group_indices,
+def test_get_resource_intervals(task_allocator):
+    solution_resource_ids = np.array([1, 2, 3])
+    solution_intervals = np.array([0, 1, 2])
+    resource_matrix = np.ma.array([[0, 0, 0], [1, 0, 0], [2, 1, 0]])
+    solution_matrix = Matrix(
+        resource_ids=solution_resource_ids,
+        intervals=solution_intervals,
+        resource_matrix=resource_matrix,
     )
-    assert result is None
+    result = task_allocator._get_resource_intervals(solution_matrix)
+    expeceted = {1: (0, 2), 2: (1, 2)}
+    assert result == expeceted
 
 
-def test_allocate_task_with_invalid_input(task_allocator):
-    resource_windows_dict = {1: np.array([[0, 1, 1, 0], [2, 3, 1, -1]])}
-    task_duration = "invalid"
-    resource_count = 1
-    resource_group_indices = [[0]]
-    with pytest.raises(TypeError):
-        task_allocator.allocate_task(
-            resource_windows_dict, task_duration, resource_count, resource_group_indices
-        )
-
-
-def test_allocate_task_with_empty_input(task_allocator):
-    resource_windows_dict = {}
-    task_duration = 1
-    resource_count = 1
-    resource_group_indices = [[]]
-    with pytest.raises(Exception):  # or the specific exception that you expect
-        task_allocator.allocate_task(
-            resource_windows_dict, task_duration, resource_count, resource_group_indices
-        )
-
-
-# def test_allocate_task_with_negative_task_duration(task_allocator):
-#     resource_windows_dict = {1: np.array([[0, 1, 1, 0], [2, 3, 1, -1]])}
-#     task_duration = -1
-#     resource_count = 1
-#     resource_group_indices = [[0]]
-#     with pytest.raises(Exception):  # or your expected behavior
-#         task_allocator.allocate_task(
-#             resource_windows_dict, task_duration, resource_count, resource_group_indices
-#         )
-
-
-def test_fill_array_except_largest_group_per_row(task_allocator):
-    array = np.array(
+def test_create_matrix_from_resource_windows_dict(task_allocator):
+    resource_windows_dict = {
+        1: np.array([(0, 10, 10, 0), (20, 30, 10, -1)], dtype=window_dtype),
+        2: np.array([(0, 10, 10, 0), (25, 30, 5, 0)], dtype=window_dtype),
+    }
+    result = task_allocator._create_matrix_from_resource_windows_dict(
+        windows_dict=resource_windows_dict
+    )
+    expected_resource_ids = np.array([1, 2])
+    expected_matrix = np.array(
+        # interval, resource 1, resource 2
         [
-            [5, 0, 10],
-            [10, 30, 20],
-            [1, 1, 1],
+            [0, 0, 0],
+            [10, 10, 10],
+            [20, 0, 10],  # reset due to -1
+            [25, 5, 10],
+            [30, 10, 15],
         ]
     )
-    group_indices = [[0, 1], [2]]
-    result = task_allocator._fill_array_except_largest_group_per_row(
-        array, group_indices
-    )
-    expected = np.array(
-        [
-            [0, 0, 10],
-            [10, 30, 0],
-            [1, 1, 0],
-        ]
-    )
-    assert np.array_equal(result, expected)
+    expected_intervals = expected_matrix[:, 0]
+    expected_resource_matrix = np.ma.array(expected_matrix[:, 1:])
 
+    assert np.array_equal(
+        result.resource_ids, expected_resource_ids
+    ), f"Expected resource_ids to be {expected_resource_ids}, but got {result.resource_ids}"
 
-def test_expand_array(task_allocator):
-    arr = np.array(
-        [
-            [5, 0],
-            [10, 10],
-        ]
-    )
-    new_boundaries = np.array([7, 12])
-    result = task_allocator._expand_array(arr, new_boundaries)
-    expected = np.array(
-        [
-            [5, 0],
-            [7, 4],
-            [10, 10],
-            [12, 0],
-        ]
-    )
-    assert np.array_equal(result, expected)
+    assert np.array_equal(
+        result.intervals, expected_intervals
+    ), f"Expected intervals to be {expected_intervals}, but got {result.intervals}"
 
-
-test_case_values = [
-    # trim both intervals
-    (
-        "No Resets",
-        [
-            np.array([[0, 10, 10, 0], [20, 30, 10, 0]]),
-            np.array([[5, 15, 10, 0], [20, 30, 10, 0]]),
-        ],
-        np.array(
-            [
-                [0, 0, 0],
-                [5, 5, 0],
-                [10, 10, 5],
-                [15, 10, 10],
-                [20, 10, 10],
-                [30, 20, 20],
-            ]
-        ),
-    ),
-    (
-        "With resets and high durations",
-        [
-            np.array([[0, 10, 20, 0], [20, 30, 10, -1]]),
-            np.array([[5, 15, 10, 0], [20, 30, 10, -1]]),
-            np.array([[0, 30, 60, 0]]),
-        ],
-        np.array(
-            [
-                [0, 0, 0, 0],
-                [5, 10, 0, 10],
-                [10, 20, 5, 20],
-                [15, 20, 10, 30],
-                [20, 0, 0, 40],
-                [30, 10, 10, 60],
-            ]
-        ),
-    ),
-]
+    assert np.array_equal(
+        result.resource_matrix, expected_resource_matrix
+    ), f"Expected resource_matrix to be {expected_resource_matrix}, but got {result.resource_matrix}"
 
 
 @pytest.mark.parametrize(
-    "test_name, resource_windows_dict, expected",
-    test_case_values,
-    ids=[case[0] for case in test_case_values],
-)
-def test_create_matrix(test_name, task_allocator, resource_windows_dict, expected):
-    result = task_allocator.create_matrix(resource_windows_dict)
-    assert np.array_equal(result, expected)
-
-
-@pytest.mark.parametrize(
-    "array, expected",
+    "array, k, expected",
     [
-        (np.array([0, 1, 3, 0, 1, 1]), 3),
-        (np.array([0, 2, 3, 4, 5]), 0),
-        (np.array([2, 3, 4, 5, 6]), 0),
+        (
+            np.ma.array([[5, 0, 10], [10, 30, 20], [1, 1, 1]]),
+            2,
+            np.array(
+                [[False, True, False], [True, False, False], [True, False, False]]
+            ),
+        ),
+        (
+            np.ma.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+            1,
+            np.array([[True, True, False], [True, True, False], [True, True, False]]),
+        ),
+        (
+            np.ma.array([[9, 8, 7], [6, 5, 4], [3, 2, 1]]),
+            3,
+            np.array(
+                [[False, False, False], [False, False, False], [False, False, False]]
+            ),
+        ),
     ],
 )
-def test_get_window_start_index(task_allocator, array, expected):
-    result = task_allocator._get_window_start_index(array)
-    assert np.array_equal(result, expected)
-
-
-def test_mask_smallest_except_k_largest(task_allocator):
-    array = np.array(
-        [
-            [5, 0, 10],
-            [10, 30, 20],
-            [1, 1, 1],
-        ]
-    )
-    result = task_allocator._mask_smallest_except_k_largest(array, 2).mask
-    expected = np.array(
-        [
-            [False, True, False],
-            [True, False, False],
-            [True, False, False],
-        ]
-    )
+def test_mask_smallest_elements_except_top_k_per_row(
+    task_allocator, array, k, expected
+):
+    result = task_allocator._mask_smallest_elements_except_top_k_per_row(array, k).mask
     assert np.array_equal(result, expected)
 
 
@@ -214,3 +119,65 @@ def test_mask_smallest_except_k_largest(task_allocator):
 def test_cumsum_reset_at_minus_one(task_allocator, array, expected):
     result = task_allocator._cumsum_reset_at_minus_one(array)
     assert np.array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "array, expected",
+    [
+        (np.array([0, 1, 3, 0, 1, 1]), 3),
+        (np.array([0, 2, 3, 4, 5]), 0),
+        (np.array([2, 3, 4, 5, 6]), 0),
+    ],
+)
+def test_find_last_zero_index(task_allocator, array, expected):
+    result = task_allocator._find_last_zero_index(array)
+    assert np.array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "array, expected",
+    [
+        (
+            np.array([[[0, 0, 0], [2, 2, np.nan], [3, 3, 3]]]),
+            np.array([[[0, 0, 0], [2, 2, 2], [3, 3, 3]]]),
+        ),
+        (
+            np.array([[[0, 0, 0], [5, np.nan, np.nan], [10, 15, 20]]]),
+            np.array([[[0, 0, 0], [5, 7.5, 10], [10, 15, 20]]]),
+        ),
+        (
+            np.array([[[0, 0], [5, np.nan], [10, np.nan], [15, 15]]]),
+            np.array([[[0, 0], [5, 5], [10, 10], [15, 15]]]),
+        ),
+    ],
+)
+def test_interpolate_y_values(array, expected):
+    task_allocator = TaskAllocator()
+    result = task_allocator._interpolate_y_values(array)
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "array, mask, expected",
+    [
+        (
+            np.array([1, 3]),
+            np.array([True, False, True]),
+            np.array([1, np.nan, 3]),
+        ),
+        (
+            np.array([]),
+            np.array([False, False, False]),
+            np.array([np.nan, np.nan, np.nan]),
+        ),
+        (
+            np.array([1, 2, 3]),
+            np.array([True, True, True]),
+            np.array([1, 2, 3]),
+        ),
+    ],
+)
+def test_replace_masked_values_with_nan(array, mask, expected):
+    task_allocator = TaskAllocator()
+    result = task_allocator._replace_masked_values_with_nan(array, mask)
+    np.testing.assert_array_equal(result, expected)

@@ -1,169 +1,190 @@
-from typing import Optional
+from math import ceil
 
 import numpy as np
+
+from factryengine.models import Assignment, Resource, ResourceGroup
+
+from .exceptions import AllocationError
+from .matrix import Matrix
 
 
 class TaskAllocator:
     def allocate_task(
         self,
-        resource_windows: list[np.array],
-        resource_ids: np.array,
+        resource_windows_dict: dict[int, np.array],
+        assignments: list[Assignment],
+        constraints: set[Resource],
         task_duration: float,
-        resource_count: int,
-        resource_group_indices: list[list[int]],
-    ) -> Optional[dict[int, np.array]]:
-        matrix = self.create_matrix(resource_windows)
+    ) -> dict[int, tuple[int, int]]:
+        """
+        allocates a task to the resources with the fastest completion based on the resource windows dict.
+        Assignments determine which resources and how many.
+        """
 
-        solution_matrix, solution_resource_ids = self.solve_matrix(
-            matrix=matrix,
+        resource_windows_matrix = self._create_matrix_from_resource_windows_dict(
+            resource_windows_dict
+        )
+
+        # create constraints matrix
+        constraints_matrix = self._create_constraints_matrix(
+            resource_constraints=constraints,
+            resource_windows_matrix=resource_windows_matrix,
             task_duration=task_duration,
-            resource_ids=resource_ids,
-            resource_count=resource_count,
-            resource_group_indices=resource_group_indices,
         )
-        if solution_matrix is None:
-            return None
-        # get allocated windows
+        if assignments and constraints:
+            # update the resource matrix with the constraint matrix
+            self._apply_constraint_to_resource_windows_matrix(
+                constraints_matrix, resource_windows_matrix
+            )
+
+        # build assignment matrices
+        assignments_matrix = self._create_assignments_matrix(
+            assignments=assignments,
+            resource_windows_matrix=resource_windows_matrix,
+            task_duration=task_duration,
+        )
+
+        # matrix to solve
+        matrix_to_solve = assignments_matrix or constraints_matrix
+
+        # find the solution
+        solution_matrix = self._solve_matrix(
+            matrix=matrix_to_solve,
+            task_duration=task_duration,
+        )
+        # process solution to find allocated resource windows
         allocated_windows = self._get_resource_intervals(
-            solution_matrix, solution_resource_ids
+            matrix=solution_matrix,
         )
+
+        # add constraints to allocated windows
+        if constraints and assignments:
+            constraints_matrix_trimmed = Matrix.trim(
+                original_matrix=constraints_matrix, trim_matrix=solution_matrix
+            )
+            allocated_windows.update(
+                self._get_resource_intervals(
+                    matrix=constraints_matrix_trimmed,
+                )
+            )
 
         return allocated_windows
 
-    def create_matrix(self, windows: list[np.array]) -> np.array:
-        boundaries = np.unique(
-            np.concatenate([window[:, 0:2].flatten() for window in windows])
+    def _solve_matrix(
+        self,
+        task_duration: float,
+        matrix: Matrix = None,
+    ) -> Matrix:
+        """
+        Takes the task matrix as input and finds the earliest solution
+        where the work of the resources equals the task duration.
+        If no solution is found, returns AllocationError.
+        Returns a matrix with the solution as the last row.
+        """
+
+        # Check if total resources in assignments_matrix meet task_duration
+
+        matrix_meet_duration = np.sum(matrix.resource_matrix, axis=1) >= task_duration
+
+        # Find index of first true condition
+        solution_index = np.argmax(matrix_meet_duration)
+
+        # check if solution exists
+        if solution_index == 0:
+            raise AllocationError("No solution found.")
+
+        # select the resources which are part of the solution
+        solution_resources_mask = ~matrix.resource_matrix.mask[solution_index]
+        solution_resource_ids = matrix.resource_ids[solution_resources_mask]
+
+        end_index = solution_index + 1
+        # filter resource matrix using solution resource mask
+        solution_resource_matrix = matrix.resource_matrix[
+            :end_index, solution_resources_mask
+        ]
+        # do linear regression to find precise solution
+        # only use the last two rows of the matrix where
+        # where the first row is the solution row
+        last_two_rows = slice(-2, None)
+        interval, solution_row = self._solve_task_end(
+            resource_matrix=solution_resource_matrix[:][last_two_rows],
+            intervals=matrix.intervals[:end_index][last_two_rows],
+            task_duration=task_duration,
         )
-        matrix = [boundaries]
-        for window in windows:
-            window = self._transform_array(window)
-            window[:, 1] = self._cumsum_reset_at_minus_one(window[:, 1])
-            new_boundaries = np.setdiff1d(boundaries, window[:, 0])
-            window = self._expand_array(window, new_boundaries)
-            matrix.append(window[:, 1])
 
-        return np.stack(matrix, axis=-1)
+        # update the solution row
+        solution_resource_matrix[-1] = solution_row
 
-    def solve_matrix(
+        solution_intervals = np.append(matrix.intervals[:solution_index], interval)
+
+        return Matrix(
+            resource_ids=solution_resource_ids,
+            intervals=solution_intervals,
+            resource_matrix=solution_resource_matrix,
+        )
+
+    def _solve_task_end(
+        self,
+        resource_matrix: np.ma.MaskedArray,
+        intervals: np.ndarray,
+        task_duration: int,
+    ) -> tuple[int, np.array]:
+        """
+        Calculates the end of a task given a resource matrix, intervals, and task duration.
+        """
+        # Initialize total slope and intercept
+        total_slope, total_intercept = 0, 0
+
+        # List to store slope and intercept values for each column
+        slope_intercept_values = []
+
+        # Calculate slope and intercept for each column
+        for resource_col in range(resource_matrix.shape[1]):
+            slope, intercept = np.polyfit(
+                x=intervals, y=resource_matrix[:, resource_col], deg=1
+            )
+            total_slope += slope
+            total_intercept += intercept
+            slope_intercept_values.append((slope, intercept))
+
+        # Compute the column 0 value that makes the sum of the predicted values equal to the task duration
+        col0_value = (task_duration - total_intercept) / total_slope
+
+        # Compute the corresponding values for the other columns
+        other_columns_values = [
+            slope * col0_value + intercept
+            for slope, intercept in slope_intercept_values
+        ]
+
+        # Return a numpy array containing the solved value for column 0 and the predicted values for the other columns
+        return col0_value, other_columns_values
+
+    def _get_resource_intervals(
         self,
         matrix: np.array,
-        task_duration: float,
-        resource_ids: np.array,
-        resource_count=1,
-        resource_group_indices=list[list[int]],
-    ) -> Optional[dict[int, np.array]]:
-        """
-        Finds the earliest possible solution for a given task based on its duration and
-        the number of resources available. The method uses a matrix representation of
-        the resource windows to calculate the optimal allocation of the task.
-        """
-
-        resource_matrix = matrix[:, 1:]
-        if resource_count == 1 and task_duration > resource_matrix.max():
-            return (None, None)
-
-        # mask all but the largest group per row if there are multiple groups
-        if len(resource_group_indices) > 1:
-            resource_matrix = self._fill_array_except_largest_group_per_row(
-                resource_matrix, resource_group_indices
-            )
-
-        # mask all but the k largest elements per row
-        masked_resource_matrix = self._mask_smallest_except_k_largest(
-            resource_matrix, resource_count
-        )
-
-        arr_sum = np.sum(masked_resource_matrix, axis=1)
-        if task_duration > arr_sum.max():
-            return (None, None)
-
-        # get solution index and resource ids
-        solution_index = np.argmax(arr_sum >= task_duration)
-        solution_resources_mask = ~masked_resource_matrix.mask[solution_index]
-        solution_resource_ids = resource_ids[solution_resources_mask]
-
-        # solve matrix
-        solution_cols_mask = np.concatenate([[True], solution_resources_mask])
-        solution_matrix = matrix[: solution_index + 1, solution_cols_mask]
-        solution = self._solve_task_end(solution_matrix[-2:], task_duration)
-        solution_matrix = np.vstack(
-            (solution_matrix[:solution_index], np.atleast_2d(solution))
-        )
-
-        return solution_matrix, solution_resource_ids
-
-    def _solve_task_end(self, matrix: np.array, task_duration: int) -> np.array:
-        # Calculate slopes and intercepts for all columns after the first one directly
-        # into total_m and total_b
-        total_m, total_b = 0, 0
-        mb_values = []
-        for i in range(1, matrix.shape[1]):
-            m, b = np.polyfit(matrix[:, 0], matrix[:, i], 1)
-            total_m += m
-            total_b += b
-            mb_values.append((m, b))
-
-        # Compute the column 0 value that makes the sum of the predicted values equal to
-        # the desired sum
-        col0 = (task_duration - total_b) / total_m
-
-        # Compute the corresponding values for the other columns using matrix operations
-        other_cols = [m * col0 + b for m, b in mb_values]
-
-        # Return a numpy array containing the solved value for column 0 and the
-        # predicted values for the other columns
-        result = np.array([col0] + other_cols)
-
-        return result
-
-    def _get_window_start_index(self, arr):
-        """
-        returns the index of the first non-zero element in an array from the end.
-        """
-        zero_indices = np.nonzero(arr == 0)  # Find the indices of zeros from the end
-
-        if zero_indices[0].size > 0:
-            return zero_indices[0][-1]
-        else:
-            return 0
-
-    def _get_resource_intervals(self, solution_matrix, resources):
+    ) -> dict[int, tuple[int, int]]:
         """
         gets the resource intervals from the solution matrix.
         """
-        start_indexes = [
-            self._get_window_start_index(resource_arr)
-            for resource_arr in solution_matrix[:, 1:].T
-        ]
-        end_index = solution_matrix.shape[0] - 1
-
-        resource_windows_dict = {
-            resource_id: (
-                self._split_intervals(solution_matrix[start_index:, [0, i + 1]])
-            )
-            for i, (resource_id, start_index) in enumerate(
-                zip(resources, start_indexes)
-            )
-            if start_index < end_index
-        }
+        end_index = matrix.resource_matrix.shape[0] - 1
+        resource_windows_dict = {}
+        # loop through resource ids and resource intervals
+        for resource_id, resource_intervals in zip(
+            matrix.resource_ids, matrix.resource_matrix.T
+        ):
+            # ensure only continuous intervals are selected
+            indexes = self._find_indexes(resource_intervals.data)
+            if indexes is not None:
+                start_index, end_index = indexes
+                resource_windows_dict[resource_id] = (
+                    ceil(round(matrix.intervals[start_index], 1)),
+                    ceil(round(matrix.intervals[end_index], 1)),
+                )
         return resource_windows_dict
 
-    def _split_intervals(self, arr):
-        """
-        splits an array into intervals based on the values in the second column.
-        Splitting is done when the value in the second column does not change.
-        """
-        diff = np.diff(arr[:, 1])
-        indices = np.where(diff == 0)[0]
-        splits = np.split(arr[:, 0], indices + 1)
-        intervals = [
-            (round(np.min(split), 2), round(np.max(split), 2))
-            for split in splits
-            if split.size > 1
-        ]
-        return intervals
-
-    def _mask_smallest_except_k_largest(self, array, k) -> np.ma.core.MaskedArray:
+    def _mask_smallest_elements_except_top_k_per_row(
+        self, array: np.ma.core.MaskedArray, k
+    ) -> np.ma.core.MaskedArray:
         """
         Masks the smallest elements in an array, except for the k largest elements on
         each row. This is a helper method used in the finding of the earliest solution.
@@ -174,45 +195,10 @@ class TaskAllocator:
         rows = np.arange(array.shape[0])[:, np.newaxis]
         mask[rows, indices[:, -k:]] = False
         mask[array == 0] = True
-        masked_array = np.ma.masked_array(array, mask=mask)
-        return masked_array
+        array.mask = mask
+        return array
 
-    def _fill_array_except_largest_group_per_row(
-        self, array, group_indices=list[list[int, int]]
-    ) -> np.array:
-        """
-        Returns an array where all elements in each row are filled with zero except
-        those in the group (set of columns) with the largest sum. Groups are defined by
-        a list of lists, each inner list containing the indices of columns in that
-        group. Originally zero elements and those not in the largest sum group are
-        filled withzeros.
-        """
-        num_rows = array.shape[0]
-        # Initialize mask with all True (masked)
-        mask = np.ones_like(array, dtype=bool)
-
-        # Iterate over each row in the array
-        for i in range(num_rows):
-            row = array[i]
-            # Calculate the sums for each group in the row
-            group_sums = [np.sum(row[group]) for group in group_indices]
-            # Find the indices of the group with the largest sum
-            largest_group = group_indices[np.argmax(group_sums)]
-            # Unmask (False) the elements in the largest group
-            mask[i, largest_group] = False
-
-        # Ensure all zeros in the array are masked
-        mask[array == 0] = True
-
-        # Apply the mask to the array
-        masked_array = np.ma.masked_array(array, mask=mask)
-
-        # Fill masked values with zeros
-        filled_array = masked_array.filled(0)
-
-        return filled_array
-
-    def _cumsum_reset_at_minus_one(self, a) -> np.ndarray:
+    def _cumsum_reset_at_minus_one(self, a: np.ndarray) -> np.ndarray:
         """
         Computes the cumulative sum of an array but resets the sum to zero whenever a
         -1 is encountered. This is a helper method used in the creation of the resource
@@ -224,59 +210,298 @@ class TaskAllocator:
         overcount = np.maximum.accumulate(without_reset * reset_at)
         return without_reset - overcount
 
-    def _transform_array(self, arr):
-        # Separate the start/end values and start/end duration values
-        interval_values = arr[:, [0, 1]].ravel()
-        durations = arr[:, [3, 2]].ravel()
+    def _cumsum_reset_at_minus_one_2d(self, arr: np.ndarray) -> np.ndarray:
+        return np.apply_along_axis(self._cumsum_reset_at_minus_one, axis=0, arr=arr)
 
-        # Stack the interval values and durations together
-        result = np.column_stack((interval_values, durations))
-
-        return result
-
-    def _expand_array(self, arr: np.ndarray, new_boundaries: np.ndarray) -> np.ndarray:
+    def _replace_masked_values_with_nan(
+        self, array: np.ndarray, mask: np.ndarray
+    ) -> np.ndarray:
         """
-        Expands an array with new boundaries and calculates the corresponding durations
-        using linear interpolation.
+        replaces masked values in an array with nan.
         """
-        new_boundaries = np.asarray(new_boundaries)
+        result_array = np.full(mask.shape, np.nan)  # Initialize with nan
+        result_array[mask] = array
+        return result_array
 
-        # Only keep the boundaries that are not already in the array and within the
-        # existing range
+    def _create_matrix_from_resource_windows_dict(
+        self, windows_dict: dict[int, np.ndarray]
+    ) -> Matrix:
+        """
+        creates a matrix from a dictionary of resource windows.
+        """
+        # convert the dictionary of resource windows to a numpy array
+        resource_windows_list = list(windows_dict.values())
+
+        # get all window interval boundaries
+        all_interval_boundaries = []
+        for window in resource_windows_list:
+            all_interval_boundaries.extend(window["start"].ravel())
+            all_interval_boundaries.extend(window["end"].ravel())
+
+        # find unique values
+        intervals = np.unique(all_interval_boundaries)
+
+        # first column is the interval boundaries
+        matrix = [intervals]
+        # loop through the resource windows and create a column for each resource
+        for window in resource_windows_list:
+            window_boundaries = np.dstack((window["start"], window["end"])).flatten()
+
+            missing_boundaries_mask = np.isin(intervals, window_boundaries)
+
+            window_durations = np.dstack(
+                (window["is_split"], window["duration"])
+            ).flatten()
+
+            # replace masked values with nan
+
+            resource_column = self._replace_masked_values_with_nan(
+                window_durations, missing_boundaries_mask
+            )
+
+            # fill nan values with linear interpolation
+
+            resource_column = self._linear_interpolate_nan(resource_column, intervals)
+
+            # distribute the window durations over the intervals
+            resource_column = self._diff_and_zero_negatives(resource_column)
+
+            matrix.append(resource_column)
+
+        # create numpy matrix
+
+        matrix = np.stack(matrix, axis=1)
+
+        # select only the resource columns
+        resource_matrix = np.ma.MaskedArray(matrix[:, 1:])
+
+        # extract intervals
+        resource_ids = np.array(list(windows_dict.keys()))
+        return Matrix(
+            resource_ids=resource_ids,
+            intervals=intervals,
+            resource_matrix=resource_matrix,
+        )
+
+    def _diff_and_zero_negatives(self, arr):
+        arr = np.diff(arr, prepend=0)
+        # replace negative values with 0
+        arr[arr < 0] = 0
+        return arr
+
+    def _create_resource_group_matrix(
+        self,
+        resource_group: ResourceGroup,
+        resource_count: int,
+        use_all_resources: bool,
+        resource_windows_matrix: Matrix,
+    ) -> Matrix:
+        """
+        Creates a resource group matrix from a resource group and resource windows matrix.
+        """
+
+        resource_ids = np.array(resource_group.get_resource_ids())
+
+        # find the resources that exist in the windows matrix
+        available_resources = np.intersect1d(
+            resource_ids, resource_windows_matrix.resource_ids
+        )
+        available_resources_count = len(available_resources)
+        if available_resources_count == 0:
+            return None
+
+        # Find the indices of the available resources in the windows matrix
+        resource_indexes = np.where(
+            np.isin(resource_windows_matrix.resource_ids, available_resources)
+        )[0]
+
+        # Build the resource_matrix for the resource group matrix
+        resource_matrix = resource_windows_matrix.resource_matrix[:, resource_indexes]
+        # compute the cumulative sum of the resource matrix columns
+        resource_matrix = self._cumsum_reset_at_minus_one_2d(resource_matrix)
+
+        # mask all but the k largest elements per row
+        if use_all_resources is False:
+            if resource_count < available_resources_count:
+                resource_matrix = self._mask_smallest_elements_except_top_k_per_row(
+                    resource_matrix, resource_count
+                )
+
+        return Matrix(
+            resource_ids=resource_ids,
+            intervals=resource_windows_matrix.intervals,
+            resource_matrix=resource_matrix,
+        )
+
+    def _create_constraints_matrix(
+        self,
+        resource_constraints: set[Resource],
+        resource_windows_matrix: Matrix,
+        task_duration: int,
+    ) -> Matrix:
+        """
+        Checks if the resource constraints are available and updates the resource windows matrix.
+        """
+        if not resource_constraints:
+            return None
+
+        # get the constraint resource ids
+        resource_ids = np.array([resource.id for resource in resource_constraints])
+
+        # check if all resource constraints are available
+        if not np.all(np.isin(resource_ids, resource_windows_matrix.resource_ids)):
+            raise AllocationError("All resource constraints are not available")
+
+        # Find the indices of the available resources in the windows matrix
+        resource_indexes = np.where(
+            np.isin(resource_windows_matrix.resource_ids, resource_ids)
+        )[0]
+
+        # get the windows for the resource constraints
+        constraint_windows = resource_windows_matrix.resource_matrix[
+            :, resource_indexes
+        ]
+
+        # Compute the minimum along axis 1, mask values <= 0, and compute the cumulative sum
+        # devide by the number of resources to not increase the task completion time
+        min_values_matrix = (
+            np.min(constraint_windows, axis=1, keepdims=True)
+            * np.ones_like(constraint_windows)
+            / len(resource_ids)
+        )
+
+        resource_matrix = np.ma.masked_less_equal(
+            x=min_values_matrix,
+            value=0,
+        ).cumsum(axis=0)
+
+        return Matrix(
+            resource_ids=resource_ids,
+            intervals=resource_windows_matrix.intervals,
+            resource_matrix=resource_matrix,
+        )
+
+    def _apply_constraint_to_resource_windows_matrix(
+        self, constraint_matrix: Matrix, resource_windows_matrix: Matrix
+    ) -> None:
+        """
+        Adds reset to windows where the constraints are not available.
+        Resets are represented by -1.
+        """
+        # create a mask from the constraint matrix
         mask = (
-            ~np.isin(new_boundaries, arr[:, 0])
-            & (new_boundaries >= arr[0, 0])
-            & (new_boundaries <= arr[-1, 0])
+            np.ones_like(resource_windows_matrix.resource_matrix.data, dtype=bool)
+            * constraint_matrix.resource_matrix.mask
         )
-        filtered_boundaries = new_boundaries[mask]
+        # add reset to the resource matrix
+        resource_windows_matrix.resource_matrix[mask] = -1
 
-        # Find the indices where the new boundaries fit
-        idxs = np.searchsorted(arr[:, 0], filtered_boundaries)
+    def _create_assignments_matrix(
+        self,
+        assignments: list[Assignment],
+        resource_windows_matrix: Matrix,
+        task_duration: int,
+    ) -> Matrix:
+        if assignments == []:
+            return None
 
-        # Calculate the weights for linear interpolation
-        weights = (filtered_boundaries - arr[idxs - 1, 0]) / (
-            arr[idxs, 0] - arr[idxs - 1, 0]
-        )
+        assignment_matrices = []
+        for assignment in assignments:
+            # create resource group matrices
+            resource_group_matrices = []
+            for resource_group in assignment.resource_groups:
+                resource_group_matrix = self._create_resource_group_matrix(
+                    resource_group=resource_group,
+                    resource_count=assignment.resource_count,
+                    use_all_resources=assignment.use_all_resources,
+                    resource_windows_matrix=resource_windows_matrix,
+                )
+                if resource_group_matrix is None:
+                    continue
 
-        duration_increase = weights * (arr[idxs, 1] - arr[idxs - 1, 1])
+                resource_group_matrices.append(resource_group_matrix)
 
-        # ensure duration cannot decrease
-        duration_increase[duration_increase < 0] = 0
+            if resource_group_matrices == []:
+                raise AllocationError("No resource groups with available resources.")
 
-        # Calculate the new durations using linear interpolation
-        new_durations = arr[idxs - 1, 1] + duration_increase
+            # keep resource group matrix rows with the fastest completion
+            assignment_matrix = Matrix.compare_update_mask_and_merge(
+                resource_group_matrices
+            )
+            assignment_matrices.append(assignment_matrix)
 
-        # Combine the new boundaries and durations into an array
-        new_rows_within_range = np.column_stack((filtered_boundaries, new_durations))
+        # merge assignment matrices
+        assignments_matrix = Matrix.merge(assignment_matrices)
 
-        # Handle boundaries that are outside the existing range
-        new_rows_outside_range = np.column_stack(
-            (new_boundaries[~mask], np.zeros(np.sum(~mask)))
-        )
+        # check if solution exists
+        if not np.any(assignments_matrix.resource_matrix >= task_duration):
+            raise AllocationError("No solution found.")
 
-        # Combine the old boundaries/durations and new boundaries/durations and sort by
-        # the boundaries
-        combined = np.vstack((arr, new_rows_within_range, new_rows_outside_range))
-        combined = combined[np.argsort(combined[:, 0])]
+        return assignments_matrix
 
-        return combined
+    def _find_indexes(self, arr: np.array) -> tuple[int, int] | None:
+        """
+        Find the start and end indexes from the last zero to the last number with no increase in a NumPy array.
+        """
+        # if last element is zero return None
+        if arr[-1] == 0:
+            return None
+
+        # Find the index of the last zero
+        zero_indexes = np.nonzero(arr == 0)[0]
+        if zero_indexes.size > 0:
+            start_index = zero_indexes[-1]
+        else:
+            return None
+
+        # Use np.diff to find where the array stops increasing
+        diffs = np.diff(arr[start_index:])
+
+        # Find where the difference is less than or equal to zero (non-increasing sequence)
+        non_increasing = np.where(diffs == 0)[0]
+
+        if non_increasing.size > 0:
+            # The end index is the last non-increasing index + 1 to account for the difference in np.diff indexing
+            end_index = non_increasing[0] + start_index
+        else:
+            end_index = (
+                arr.size - 1
+            )  # If the array always increases, end at the last index
+
+        return start_index, end_index
+
+    def _linear_interpolate_nan(self, y: np.ndarray, x: np.ndarray) -> np.ndarray:
+        """
+        Linearly interpolate NaN values in a 1D array.
+        Ignores when the slope is negative.
+        """
+        # fill trailing and ending NaNs with 0
+        start_index = np.argmax(~np.isnan(y))
+        y[:start_index] = 0
+        end_index = len(y) - np.argmax(~np.isnan(y[::-1]))
+        y[end_index:] = 0
+        # Ensure input arrays are numpy arrays
+        nan_mask = np.isnan(y)
+        xp = x[~nan_mask]
+        x = x[nan_mask]
+        yp = y[~nan_mask]
+
+        # Find indices where the right side of the interval for each x would be
+        idx = np.searchsorted(xp, x) - 1
+        idx[idx < 0] = 0
+        idx[idx >= len(xp) - 1] = len(xp) - 2
+
+        # Compute the slope (dy/dx) between the interval points
+        slope = (yp[idx + 1] - yp[idx]) / (xp[idx + 1] - xp[idx])
+        positive_slope_mask = slope > 0
+
+        # Create a combined mask for NaN positions with positive slopes
+        combined_mask = np.zeros_like(y, dtype=bool)
+        combined_mask[nan_mask] = positive_slope_mask
+
+        # Compute the interpolated values
+        interpolated_values = (yp[idx] + slope * (x - xp[idx]))[positive_slope_mask]
+        y[combined_mask] = interpolated_values
+
+        # convert nan to zero
+        return np.nan_to_num(y)

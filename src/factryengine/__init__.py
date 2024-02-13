@@ -1,6 +1,9 @@
-from .models.resource import Resource  # noqa: F401
-from .models.task import Task  # noqa: F401
-from .scheduler.core import Scheduler  # noqa: F401
+import warnings
 
-from . import _version
-__version__ = _version.get_versions()['version']
+import numpy as np
+
+from .models import Assignment, Resource, ResourceGroup, Task
+from .scheduler.core import Scheduler
+
+# Ignore numpy's UserWarning
+warnings.filterwarnings("ignore", category=UserWarning, module="numpy.*")

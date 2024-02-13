@@ -1,6 +1,8 @@
 import numpy as np
 
 from ...models import Resource, Task
+from ..utils import get_task_predecessors
+from .exceptions import AllocationError
 from .task_allocator import TaskAllocator
 from .window_manager import WindowManager
 
@@ -17,95 +19,103 @@ class HeuristicSolver:
         self.task_allocator = TaskAllocator()
         self.window_manager = WindowManager(resources)
         self.task_vars = {
-            task_uid: {
-                "task_uid": task_uid,
+            task_id: {
+                "task_id": task_id,
                 "assigned_resource_ids": None,
                 "task_start": None,
                 "task_end": None,
                 "resource_intervals": None,
+                "error_message": None,
             }
-            for task_uid in self.task_dict.keys()
+            for task_id in self.task_dict.keys()
         }
+        self.unscheduled_task_ids = []
 
-    def solve(self):
-        unscheduled_tasks = []
+    def solve(self) -> list[dict]:
+        """
+        Iterates through the task order and allocates resources to each task
+        """
+        for task_id in self.task_order:
+            task = self.task_dict[task_id]
 
-        for task_uid in self.task_order:
-            task = self.task_dict[task_uid]
+            task_earliest_start = self._get_task_earliest_start(task, self.task_dict)
+
+            if task_earliest_start is None:
+                self.mark_task_as_unscheduled(
+                    task_id=task_id, error_message="Task has unscheduled predecessors"
+                )
+                continue
 
             # get task resources and windows dict
             task_resource_ids = np.array(
-                [resource.id for resource in task.get_resources()]
+                [resource.id for resource in task.get_unique_resources()]
             )
 
-            task_earliest_start = self._get_task_earliest_start(task)
-
-            if task_earliest_start is None:
-                unscheduled_tasks.append(task_uid)
-                continue
-
-            task_resource_windows = self.window_manager.get_task_resource_windows(
-                task_resource_ids, task_earliest_start
+            task_resource_windows_dict = (
+                self.window_manager.get_task_resource_windows_dict(
+                    task_resource_ids, task_earliest_start
+                )
             )
-            if not task_resource_windows:
-                unscheduled_tasks.append(task_uid)
+
+            if task_resource_windows_dict == {}:
+                self.mark_task_as_unscheduled(
+                    task_id=task_id, error_message="No available resources"
+                )
                 continue
 
             # allocate task
-            allocated_resource_windows_dict = self.task_allocator.allocate_task(
-                resource_windows=task_resource_windows,
-                resource_ids=task_resource_ids,
-                task_duration=task.duration,
-                resource_count=task.resource_count,
-                resource_group_indices=task.get_resource_group_indices(),
-            )
-
-            if not allocated_resource_windows_dict:
-                unscheduled_tasks.append(task_uid)
+            try:
+                allocated_resource_windows_dict = self.task_allocator.allocate_task(
+                    resource_windows_dict=task_resource_windows_dict,
+                    assignments=task.assignments,
+                    task_duration=task.duration,
+                    constraints=task.constraints,
+                )
+            except AllocationError as e:
+                self.mark_task_as_unscheduled(task_id=task_id, error_message=str(e))
                 continue
 
-            resource_windows_min_max = self.min_max_dict_np(
-                allocated_resource_windows_dict
-            )
-
             # update resource windows
-            self.window_manager.update_resource_windows(resource_windows_min_max)
+            self.window_manager.update_resource_windows(allocated_resource_windows_dict)
 
             # Append task values
             task_values = {
-                "task_uid": task_uid,
+                "task_id": task_id,
                 "assigned_resource_ids": list(allocated_resource_windows_dict.keys()),
                 "task_start": min(
-                    start for start, _ in resource_windows_min_max.values()
+                    start for start, _ in allocated_resource_windows_dict.values()
                 ),
-                "task_end": max(end for _, end in resource_windows_min_max.values()),
+                "task_end": max(
+                    end for _, end in allocated_resource_windows_dict.values()
+                ),
                 "resource_intervals": allocated_resource_windows_dict.values(),
             }
-            self.task_vars[task_uid] = task_values
+            self.task_vars[task_id] = task_values
 
         return list(
             self.task_vars.values()
         )  # Return values of the dictionary as a list
 
-    def _get_task_earliest_start(self, task):
+    def _get_task_earliest_start(self, task: Task, task_dict: dict) -> int | None:
         """
         Retuns the earliest start of a task based on the latest end of its predecessors.
         """
         task_ends = []
-        for pred in task.predecessors:
-            task_end = self.task_vars[pred.uid]["task_end"]
+
+        predecessors = get_task_predecessors(task, task_dict)
+
+        for pred in predecessors:
+            task_end = self.task_vars[pred.id]["task_end"]
             if task_end is None:
                 return None
             task_ends.append(task_end + task.predecessor_delay)
 
         return max(task_ends, default=0)
 
-    def min_max_dict_np(self, d):
-        result = {}
-
-        for key, value_list in d.items():
-            min_val = np.min([x[0] for x in value_list])
-            max_val = np.max([x[1] for x in value_list])
-            result[key] = (min_val, max_val)
-
-        return result
+    def mark_task_as_unscheduled(self, task_id: str, error_message: str) -> None:
+        """
+        Updates the error message of a task
+        """
+        self.task_vars[task_id]["error_message"] = error_message
+        self.unscheduled_task_ids.append(task_id)
+        return
