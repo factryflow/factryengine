@@ -128,7 +128,7 @@ class TaskAllocator:
         resource_matrix: np.ma.MaskedArray,
         intervals: np.ndarray,
         task_duration: int,
-    ) -> (int, np.array):
+    ) -> tuple[int, np.array]:
         """
         Calculates the end of a task given a resource matrix, intervals, and task duration.
         """
