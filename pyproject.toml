@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "factryengine"
-version = "0.0.0"
+version = "0.3.0"
 description = "production / job shop / resource scheduler for Python"
 authors = ["Jacob Østergaard Nielsen <jacob.oestergaard.nielsen@gmail.com>"]
 license = "MIT"
@@ -20,6 +20,3 @@ ipykernel = "^6.28.0"
 
 [tool.ruff]
 ignore-init-module-imports = true
-
-[tool.poetry-version-plugin]
-source = "git-tag"
