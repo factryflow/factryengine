@@ -19,8 +19,7 @@ jobs:
         run: pip install poetry
 
       - name: Configure Poetry
-        run: |
-          poetry config virtualenvs.create false
+        run: poetry config virtualenvs.create false
 
       - name: Install dependencies
         run: poetry install
