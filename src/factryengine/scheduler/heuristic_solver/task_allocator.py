@@ -254,17 +254,22 @@ class TaskAllocator:
             ).flatten()
 
             # replace masked values with nan
-
             resource_column = self._replace_masked_values_with_nan(
                 window_durations, missing_boundaries_mask
             )
 
-            # fill nan values with linear interpolation
+            # replace -1 with 0
+            is_split_mask = resource_column == -1
+            resource_column[is_split_mask] = 0
 
+            # fill nan values with linear interpolation
             resource_column = self._linear_interpolate_nan(resource_column, intervals)
 
             # distribute the window durations over the intervals
             resource_column = self._diff_and_zero_negatives(resource_column)
+
+            # restore -1
+            resource_column[is_split_mask] = -1
 
             matrix.append(resource_column)
 
@@ -283,7 +288,11 @@ class TaskAllocator:
             resource_matrix=resource_matrix,
         )
 
-    def _diff_and_zero_negatives(self, arr):
+    def _diff_and_zero_negatives(self, arr: np.ndarray) -> np.ndarray:
+        """
+        subtracts the previous element from each element in an array and replaces negative.
+        """
+        # compute the difference
         arr = np.diff(arr, prepend=0)
         # replace negative values with 0
         arr[arr < 0] = 0
@@ -475,6 +484,7 @@ class TaskAllocator:
         Linearly interpolate NaN values in a 1D array.
         Ignores when the slope is negative.
         """
+
         # fill trailing and ending NaNs with 0
         start_index = np.argmax(~np.isnan(y))
         y[:start_index] = 0

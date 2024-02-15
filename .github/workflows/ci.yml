@@ -4,30 +4,26 @@ on: [pull_request]
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: true
-      matrix:
-        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
-        python-version: ["3.7", "3.8", "3.9"]
+    runs-on: "ubuntu-latest"
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
 
-      - name: Setup python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v2
         with:
-          python-version: ${{ matrix.python-version }}
-          architecture: x64
+          python-version: 3.11
 
-      - name: Install
-        run: |
-          pip install -e .
-          pip install -r requirements_test.txt
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Configure Poetry
+        run: poetry config virtualenvs.create false
+
+      - name: Install dependencies
+        run: poetry install
 
       - name: Run tests
-        run: pytest
+        run: poetry run pytest
 
-      - name: "Upload coverage to Codecov"
-        uses: codecov/codecov-action@v1

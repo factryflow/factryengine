@@ -56,9 +56,9 @@ def test_create_matrix_from_resource_windows_dict(task_allocator):
         [
             [0, 0, 0],
             [10, 10, 10],
-            [20, 0, 10],  # reset due to -1
-            [25, 5, 10],
-            [30, 10, 15],
+            [20, -1, 0],
+            [25, 5, 0],
+            [30, 5, 5],
         ]
     )
     expected_intervals = expected_matrix[:, 0]
@@ -122,38 +122,30 @@ def test_cumsum_reset_at_minus_one(task_allocator, array, expected):
 
 
 @pytest.mark.parametrize(
-    "array, expected",
-    [
-        (np.array([0, 1, 3, 0, 1, 1]), 3),
-        (np.array([0, 2, 3, 4, 5]), 0),
-        (np.array([2, 3, 4, 5, 6]), 0),
-    ],
-)
-def test_find_last_zero_index(task_allocator, array, expected):
-    result = task_allocator._find_last_zero_index(array)
-    assert np.array_equal(result, expected)
-
-
-@pytest.mark.parametrize(
-    "array, expected",
+    "y, x , expected",
     [
         (
-            np.array([[[0, 0, 0], [2, 2, np.nan], [3, 3, 3]]]),
-            np.array([[[0, 0, 0], [2, 2, 2], [3, 3, 3]]]),
+            np.array([0, 1, 2, 3, 4]),
+            np.array([0, 1, 2, 3, 4]),
+            np.array([0, 1, 2, 3, 4]),
         ),
         (
-            np.array([[[0, 0, 0], [5, np.nan, np.nan], [10, 15, 20]]]),
-            np.array([[[0, 0, 0], [5, 7.5, 10], [10, 15, 20]]]),
+            np.array([np.nan, np.nan, 0, 1, np.nan]),
+            np.array([0, 1, 2, 3, 4]),
+            np.array([0, 0, 0, 1, 0]),
         ),
         (
-            np.array([[[0, 0], [5, np.nan], [10, np.nan], [15, 15]]]),
-            np.array([[[0, 0], [5, 5], [10, 10], [15, 15]]]),
+            np.array([0, np.nan, np.nan, np.nan, 4]),
+            np.array([0, 1, 2, 3, 4]),
+            np.array([0, 1, 2, 3, 4]),
         ),
     ],
 )
-def test_interpolate_y_values(array, expected):
+def test_linear_interpolate_nan(y, x, expected):
     task_allocator = TaskAllocator()
-    result = task_allocator._interpolate_y_values(array)
+    result = task_allocator._linear_interpolate_nan(y, x)
+    print("result  :", result)
+    print("expected:", expected)
     np.testing.assert_array_equal(result, expected)
 
 
@@ -180,4 +172,54 @@ def test_interpolate_y_values(array, expected):
 def test_replace_masked_values_with_nan(array, mask, expected):
     task_allocator = TaskAllocator()
     result = task_allocator._replace_masked_values_with_nan(array, mask)
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "array , expected",
+    [
+        (
+            np.array([0, 1, 2, 3, 4]),
+            np.array([0, 1, 1, 1, 1]),
+        ),
+        (
+            np.array([0, 1, 2, 0, 1]),
+            np.array([0, 1, 1, 0, 1]),
+        ),
+        (
+            np.array([0, 0, 0, 0, 0]),
+            np.array([0, 0, 0, 0, 0]),
+        ),
+    ],
+)
+def test_diff_and_zero_negatives(array, expected):
+    task_allocator = TaskAllocator()
+    result = task_allocator._diff_and_zero_negatives(array)
+    print("result  :", result)
+    print("expected:", expected)
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "array , expected",
+    [
+        (
+            np.array([0, 1, 2, 3, 4]),
+            (0, 4),
+        ),
+        (
+            np.array([0, 3, 3, 3, 3]),
+            (0, 1),
+        ),
+        (
+            np.array([0, 0, 1, 2, 0]),
+            None,
+        ),
+    ],
+)
+def test_find_indexes(array, expected):
+    task_allocator = TaskAllocator()
+    result = task_allocator._find_indexes(array)
+    print("result  :", result)
+    print("expected:", expected)
     np.testing.assert_array_equal(result, expected)
