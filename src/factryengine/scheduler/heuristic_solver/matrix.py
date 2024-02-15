@@ -51,14 +51,19 @@ class Matrix:
         return cls.merge(matrices)
 
     @classmethod
-    def trim(cls, original_matrix: "Matrix", trim_matrix: "Matrix") -> "Matrix":
+    def trim_end(cls, original_matrix: "Matrix", trim_matrix: "Matrix") -> "Matrix":
         """
         Trims a Matrix based on another
         """
+        new_intervals = original_matrix.intervals[: len(trim_matrix.intervals)]
+        # Check if intervals are the same
+
+        if not np.array_equal(new_intervals, trim_matrix.intervals):
+            raise ValueError("All matrices must have the same intervals")
 
         return cls(
             resource_ids=original_matrix.resource_ids,
-            intervals=trim_matrix.intervals,
+            intervals=new_intervals,
             resource_matrix=original_matrix.resource_matrix[
                 : len(trim_matrix.intervals)
             ],
