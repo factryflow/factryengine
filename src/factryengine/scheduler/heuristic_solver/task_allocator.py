@@ -59,7 +59,7 @@ class TaskAllocator:
 
         # add constraints to allocated windows
         if constraints and assignments:
-            constraints_matrix_trimmed = Matrix.trim(
+            constraints_matrix_trimmed = Matrix.trim_end(
                 original_matrix=constraints_matrix, trim_matrix=solution_matrix
             )
             allocated_windows.update(
