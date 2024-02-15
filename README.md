@@ -30,11 +30,11 @@ from factryengine import Task, Resource, Scheduler
 resource = Resource(id=1, available_windows=[(0,10)])
 
 # Creating Task objects
-task1 = Task(id=1, duration=3, priority=2, resources=[[resource]])
-task2 = Task(id=2, duration=5, priority=1, resources=[[resource]], predecessors=[task1])
+task1 = Task(id=1, duration=3, priority=2, constraints=[resource])
+task2 = Task(id=2, duration=5, priority=1, constraints=[resource], predecessor_ids=[1])
 
 # Creating a Scheduler object and scheduling the tasks
-scheduler = Scheduler(tasks=[task1, task2])
+scheduler = Scheduler(tasks=[task1, task2], resources=[resource])
 scheduler_result = scheduler.schedule()
 ```
 
