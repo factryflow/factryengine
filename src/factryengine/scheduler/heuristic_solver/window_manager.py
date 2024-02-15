@@ -176,7 +176,7 @@ class WindowManager:
             ) * slopes_between
 
             # Update the end, duration, and is_split of the second overlap window
-            overlap_windows[1]["end"] = trim_end
+            overlap_windows[1]["start"] = trim_end
             overlap_windows[1]["duration"] = (
                 overlap_windows[1]["end"] - overlap_windows[1]["start"]
             ) * slopes_between
