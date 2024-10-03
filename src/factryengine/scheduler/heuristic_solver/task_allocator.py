@@ -448,36 +448,60 @@ class TaskAllocator:
 
         return assignments_matrix
 
+
+
     def _find_indexes(self, arr: np.array) -> tuple[int, int] | None:
         """
-        Find the start and end indexes from the last zero to the last number with no increase in a NumPy array.
+        Find the start and end indexes for a valid segment of resource availability.
+        This version avoids explicit loops and ensures the start index is correctly identified.
         """
-        # if last element is zero return None
-        if arr[-1] == 0:
+        # If the input is a MaskedArray, handle it accordingly
+        if isinstance(arr, np.ma.MaskedArray):
+            arr_data = arr.data
+            mask = arr.mask
+            # Find valid (unmasked and positive) indices
+            valid_indices = np.where((~mask) & (arr_data >= 0))[0]
+        else:
+            valid_indices = np.where(arr >= 0)[0]
+
+        # If no valid indices are found, return None (no available resources)
+        if valid_indices.size == 0:
             return None
 
-        # Find the index of the last zero
-        zero_indexes = np.nonzero(arr == 0)[0]
-        if zero_indexes.size > 0:
-            start_index = zero_indexes[-1]
-        else:
-            return None
+        # Identify if the start of the array is valid
+        start_index = 0 if arr[0] > 0 else valid_indices[0]
 
-        # Use np.diff to find where the array stops increasing
-        diffs = np.diff(arr[start_index:])
+        # Calculate differences between consecutive indices
+        diffs = np.diff(valid_indices)
 
-        # Find where the difference is less than or equal to zero (non-increasing sequence)
-        non_increasing = np.where(diffs == 0)[0]
+        # Identify segment boundaries where there is a gap greater than 1
+        gaps = diffs > 1
+        segment_boundaries = np.where(gaps)[0]
 
-        if non_increasing.size > 0:
-            # The end index is the last non-increasing index + 1 to account for the difference in np.diff indexing
-            end_index = non_increasing[0] + start_index
-        else:
-            end_index = (
-                arr.size - 1
-            )  # If the array always increases, end at the last index
+        # Insert the start index explicitly to ensure it is considered
+        segment_starts = np.insert(segment_boundaries + 1, 0, 0)
+        segment_ends = np.append(segment_starts[1:], len(valid_indices))
+
+        # Always take the first segment (which starts at the earliest valid index)
+        start_pos = segment_starts[0]
+        end_pos = segment_ends[0] - 1
+
+        # Convert these segment positions to the actual start and end indices
+        start_index = valid_indices[start_pos]
+        end_index = valid_indices[end_pos]
+
+        # Debugging statements
+        print(f"Valid indices: {valid_indices}")
+        print(f"Diffs: {diffs}")
+        print(f"Segment boundaries: {segment_boundaries}")
+        print(f"Segment starts: {segment_starts}")
+        print(f"Segment ends: {segment_ends}")
+        print(f"Selected start index: {start_index}")
+        print(f"Selected end index: {end_index}")
 
         return start_index, end_index
+
+
 
     def _linear_interpolate_nan(self, y: np.ndarray, x: np.ndarray) -> np.ndarray:
         """
