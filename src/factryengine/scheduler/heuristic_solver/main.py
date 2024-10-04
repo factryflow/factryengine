@@ -75,22 +75,26 @@ class HeuristicSolver:
                 self.mark_task_as_unscheduled(task_id=task_id, error_message=str(e))
                 continue
 
+            print(f"Allocated resources for task {task_id}: {allocated_resource_windows_dict}")
+
+            print('PASS')
             # update resource windows
             self.window_manager.update_resource_windows(allocated_resource_windows_dict)
 
-            # Append task values
+            
             task_values = {
                 "task_id": task_id,
                 "assigned_resource_ids": list(allocated_resource_windows_dict.keys()),
                 "task_start": min(
-                    start for start, _ in allocated_resource_windows_dict.values()
+                    start for intervals in allocated_resource_windows_dict.values() for start, _ in intervals
                 ),
                 "task_end": max(
-                    end for _, end in allocated_resource_windows_dict.values()
+                    end for intervals in allocated_resource_windows_dict.values() for _, end in intervals
                 ),
                 "resource_intervals": allocated_resource_windows_dict.values(),
             }
             self.task_vars[task_id] = task_values
+
 
         return list(
             self.task_vars.values()

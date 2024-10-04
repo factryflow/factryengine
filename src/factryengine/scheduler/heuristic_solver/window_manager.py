@@ -45,13 +45,28 @@ class WindowManager:
         self, allocated_resource_windows_dict: dict[int, list[tuple[int, int]]]
     ) -> None:
         """
-        Removes the task interaval from the resource windows
+        Removes the allocated intervals from the resource windows.
         """
-        for resource_id, trim_interval in allocated_resource_windows_dict.items():
+        for resource_id, trim_intervals in allocated_resource_windows_dict.items():
+            if not trim_intervals:
+                continue
+
+            # Get the earliest start and latest end of the intervals
+            combined_start = trim_intervals[0][0]
+            combined_end = trim_intervals[-1][1]
+
+            # Create a single trim interval
+            combined_trim_interval = (combined_start, combined_end)
+
+            # Get the window to trim
             window = self.resource_windows_dict[resource_id]
+
+            # Trim the window using the combined interval
             self.resource_windows_dict[resource_id] = self._trim_window(
-                window, trim_interval
+                window, combined_trim_interval
             )
+
+
 
     def _create_resource_windows_dict(self) -> dict[int, np.ndarray]:
         """

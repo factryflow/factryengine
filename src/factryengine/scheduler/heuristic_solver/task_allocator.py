@@ -162,25 +162,33 @@ class TaskAllocator:
     def _get_resource_intervals(
         self,
         matrix: np.array,
-    ) -> dict[int, tuple[int, int]]:
+    ) -> dict[int, list[tuple[int, int]]]:
         """
-        gets the resource intervals from the solution matrix.
+        Gets the resource intervals from the solution matrix by pairing the intervals directly,
+        taking consecutive pairs like (index0, index1), (index2, index3), until the end index.
         """
-        end_index = matrix.resource_matrix.shape[0] - 1
         resource_windows_dict = {}
-        # loop through resource ids and resource intervals
-        for resource_id, resource_intervals in zip(
-            matrix.resource_ids, matrix.resource_matrix.T
-        ):
-            # ensure only continuous intervals are selected
+
+        # Loop through resource ids and resource intervals
+        for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
+            # Ensure only continuous intervals are selected
             indexes = self._find_indexes(resource_intervals.data)
+            print(f"Indexes for resource {resource_id}: {indexes}")
+            print(f"Resource intervals: {matrix.intervals}")
+
             if indexes is not None:
                 start_index, end_index = indexes
-                resource_windows_dict[resource_id] = (
-                    ceil(round(matrix.intervals[start_index], 1)),
-                    ceil(round(matrix.intervals[end_index], 1)),
-                )
+
+                # Create pairs of intervals, using every two consecutive values until the end_index
+                segment_intervals = [
+                    (ceil(round(matrix.intervals[i], 1)), ceil(round(matrix.intervals[i + 1], 1)))
+                    for i in range(start_index, end_index, 2)  # Step by 2 to get consecutive pairs
+                ]
+
+                resource_windows_dict[resource_id] = segment_intervals
+
         return resource_windows_dict
+
 
     def _mask_smallest_elements_except_top_k_per_row(
         self, array: np.ma.core.MaskedArray, k
