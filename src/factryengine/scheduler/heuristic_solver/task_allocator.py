@@ -169,15 +169,10 @@ class TaskAllocator:
         """
         resource_windows_dict = {}
 
-        print(f"Matrix: {matrix}")
-
         # Loop through resource ids and resource intervals
         for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
             # Ensure only continuous intervals are selected
             indexes = self._find_indexes(resource_intervals.data)
-            print(f"Indexes for resource {resource_id}: {indexes}")
-            print(f"Resource intervals: {matrix.intervals}")
-
             if indexes is not None:
                 start_index, end_index = indexes
 
