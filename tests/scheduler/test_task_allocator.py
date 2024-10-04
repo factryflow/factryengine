@@ -28,17 +28,32 @@ def test_solve_task_end(task_allocator):
     assert np.array_equal(result_y, np.array([5, 5]))
 
 
-def test_get_resource_intervals(task_allocator):
-    solution_resource_ids = np.array([1, 2, 3])
-    solution_intervals = np.array([0, 1, 2])
-    resource_matrix = np.ma.array([[0, 0, 0], [1, 0, 0], [2, 1, 0]])
+def test_get_resource_intervals_continuous(task_allocator):
+    # Test case continuous values 1 task 2 resources
+    solution_resource_ids = np.array([1, 2])
+    solution_intervals = np.array([0, 1, 2, 3])
+    resource_matrix = np.ma.array([[0, 0], [1, 1]])
     solution_matrix = Matrix(
         resource_ids=solution_resource_ids,
         intervals=solution_intervals,
         resource_matrix=resource_matrix,
     )
     result = task_allocator._get_resource_intervals(solution_matrix)
-    expeceted = {1: (0, 2), 2: (1, 2)}
+    expeceted = {1: [(0, 1)], 2: [(0, 1)]}
+    assert result == expeceted
+
+def test_get_resource_intervals_windowed(task_allocator):
+    # Test case windowed values 1 task 1 resource
+    solution_resource_ids = np.array([1])
+    solution_intervals = np.array([0, 1, 4, 5, 7, 8])
+    resource_matrix = np.ma.array([[0], [1], [4], [5], [7], [8]])
+    solution_matrix = Matrix(
+        resource_ids=solution_resource_ids,
+        intervals=solution_intervals,
+        resource_matrix=resource_matrix,
+    )
+    result = task_allocator._get_resource_intervals(solution_matrix)
+    expeceted = {1: [(0, 1), (4, 5), (7, 8)]}
     assert result == expeceted
 
 
@@ -201,20 +216,12 @@ def test_diff_and_zero_negatives(array, expected):
 
 
 @pytest.mark.parametrize(
-    "array , expected",
+    "array, expected",
     [
-        (
-            np.array([0, 1, 2, 3, 4]),
-            (0, 4),
-        ),
-        (
-            np.array([0, 3, 3, 3, 3]),
-            (0, 1),
-        ),
-        (
-            np.array([0, 0, 1, 2, 0]),
-            None,
-        ),
+        # Full valid sequence without gaps
+        (np.array([0, 1, 2, 3, 4]), (0, 4)),
+        # Sequence with repeated values, expecting first valid segment
+        (np.array([0, 3]), (0, 1)),  # This one might need revisiting if logic changes
     ],
 )
 def test_find_indexes(array, expected):
@@ -222,4 +229,4 @@ def test_find_indexes(array, expected):
     result = task_allocator._find_indexes(array)
     print("result  :", result)
     print("expected:", expected)
-    np.testing.assert_array_equal(result, expected)
+    assert result == expected

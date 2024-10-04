@@ -169,6 +169,8 @@ class TaskAllocator:
         """
         resource_windows_dict = {}
 
+        print(f"Matrix: {matrix}")
+
         # Loop through resource ids and resource intervals
         for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
             # Ensure only continuous intervals are selected
@@ -497,15 +499,6 @@ class TaskAllocator:
         # Convert these segment positions to the actual start and end indices
         start_index = valid_indices[start_pos]
         end_index = valid_indices[end_pos]
-
-        # Debugging statements
-        print(f"Valid indices: {valid_indices}")
-        print(f"Diffs: {diffs}")
-        print(f"Segment boundaries: {segment_boundaries}")
-        print(f"Segment starts: {segment_starts}")
-        print(f"Segment ends: {segment_ends}")
-        print(f"Selected start index: {start_index}")
-        print(f"Selected end index: {end_index}")
 
         return start_index, end_index
 
