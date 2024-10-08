@@ -81,7 +81,6 @@ def test_can_compare_update_mask_and_merge(matrix_data_dict):
             [True, True, True, False, False, False],
         ]
     )
-    print(merged_matrix.resource_matrix.mask)
     assert np.array_equal(merged_matrix.resource_matrix.mask, expected_mask)
 
 
