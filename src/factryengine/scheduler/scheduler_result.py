@@ -106,14 +106,21 @@ class SchedulerResult:
         # Drop any rows with missing values
         cleaned_df = exploded_df.dropna()
 
+        exploded_intervals_df = cleaned_df.explode("resource_intervals")
+        exploded_intervals_df = exploded_intervals_df.reset_index(drop=True)
+
         # Extract the start and end of the interval from the 'resource_intervals' column
-        cleaned_df["interval_start"] = cleaned_df.resource_intervals.apply(
+        exploded_intervals_df["interval_start"] = exploded_intervals_df.resource_intervals.apply(
             lambda x: x[0]
         )
-        cleaned_df["interval_end"] = cleaned_df.resource_intervals.apply(lambda x: x[1])
+
+        print('PASS INTERVAL START')
+        exploded_intervals_df["interval_end"] = exploded_intervals_df.resource_intervals.apply(lambda x: x[1])
+
+        print('PASS INTERVAL END')
 
         # Rename the 'assigned_resource_ids' column to 'resource_id'
-        renamed_df = cleaned_df.rename(columns={"assigned_resource_ids": "resource_id"})
+        renamed_df = exploded_intervals_df.rename(columns={"assigned_resource_ids": "resource_id"})
 
         # Select only the columns we're interested in
         selected_columns_df = renamed_df[
