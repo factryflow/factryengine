@@ -164,24 +164,37 @@ class TaskAllocator:
         matrix: np.array,
     ) -> dict[int, list[tuple[int, int]]]:
         """
-        Gets the resource intervals from the solution matrix by pairing the intervals directly,
-        taking consecutive pairs like (index0, index1), (index2, index3), until the end index.
+        Gets the resource intervals from the solution matrix. 
+        Always includes the first pair, and only subsequent pairs 
+        if value_end > value_start for any given pair.
         """
         resource_windows_dict = {}
 
-        # Loop through resource ids and resource intervals
+        # Loop through resource IDs and corresponding intervals
         for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
-            # Ensure only continuous intervals are selected
             indexes = self._find_indexes(resource_intervals.data)
+
             if indexes is not None:
                 start_index, end_index = indexes
 
-                # Create pairs of intervals, using every two consecutive values until the end_index
-                segment_intervals = [
-                    (ceil(round(matrix.intervals[i], 1)), ceil(round(matrix.intervals[i + 1], 1)))
-                    for i in range(start_index, end_index, 2)  # Step by 2 to get consecutive pairs
-                ]
+                segment_intervals = []
+                is_first_pair = True  # Track if this is the first pair
 
+                # Iterate through the intervals in pairs (i, i+1)
+                for i in range(start_index, end_index, 2):
+                    # Extract values from the resource matrix
+                    value_start = matrix.resource_matrix[i][0]
+                    value_end = matrix.resource_matrix[i + 1][0]
+
+                    # Always add the first pair, or add if value_end > value_start
+                    if is_first_pair or value_end > value_start:
+                        interval_start = ceil(round(matrix.intervals[i], 1))
+                        interval_end = ceil(round(matrix.intervals[i + 1], 1))
+
+                        segment_intervals.append((interval_start, interval_end))
+                        is_first_pair = False  # Switch off the first-pair flag
+
+                # Store the segment intervals for the current resource
                 resource_windows_dict[resource_id] = segment_intervals
 
         return resource_windows_dict
