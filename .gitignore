@@ -1,6 +1,9 @@
 # Prototyping Notebooks
 notebooks/
 
+# Test data
+inputs/
+
 # vscode settings
 .vscode/
 
