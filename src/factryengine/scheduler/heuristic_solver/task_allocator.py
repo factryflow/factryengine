@@ -218,17 +218,19 @@ class TaskAllocator:
 
     def _cumsum_reset_at_minus_one(self, a: np.ndarray) -> np.ndarray:
         """
-        Computes the cumulative sum of an array but resets the sum to zero whenever a
-        -1 is encountered. This is a helper method used in the creation of the resource
-        windows matrix.
+        Computes the cumulative sum but resets to 0 whenever a -1 is encountered.
         """
-        reset_at = a == -1
-        a[reset_at] = 0
-        without_reset = a.cumsum()
-        overcount = np.maximum.accumulate(without_reset * reset_at)
-        return without_reset - overcount
+        reset_mask = (a == -1)
+        a[reset_mask] = 0  # Replace -1 with 0 for sum calculation
+        cumsum_result = np.cumsum(a)
+        cumsum_result[reset_mask] = 0  # Reset at gaps
+
+        return cumsum_result
 
     def _cumsum_reset_at_minus_one_2d(self, arr: np.ndarray) -> np.ndarray:
+        """
+        Applies cumulative sum along the columns of a 2D array and resets at gaps (-1).
+        """
         return np.apply_along_axis(self._cumsum_reset_at_minus_one, axis=0, arr=arr)
 
     def _replace_masked_values_with_nan(
@@ -362,51 +364,49 @@ class TaskAllocator:
 
     def _create_constraints_matrix(
         self,
-        resource_constraints: set[Resource],
+        resource_constraints: list[Resource],
         resource_windows_matrix: Matrix,
         task_duration: int,
     ) -> Matrix:
         """
-        Checks if the resource constraints are available and updates the resource windows matrix.
+        Creates a constraints matrix by accumulating availability across multiple windows,
+        following the structure of the resource group matrix logic.
         """
         if not resource_constraints:
             return None
 
-        # get the constraint resource ids
+        # Extract the resource IDs from the constraints
         resource_ids = np.array([resource.id for resource in resource_constraints])
 
-        # check if all resource constraints are available
-        if not np.all(np.isin(resource_ids, resource_windows_matrix.resource_ids)):
-            raise AllocationError("All resource constraints are not available")
+        # Find the intersection of the resource constraints and the windows matrix
+        available_resources = np.intersect1d(resource_ids, resource_windows_matrix.resource_ids)
+        if len(available_resources) == 0:
+            return None
 
-        # Find the indices of the available resources in the windows matrix
+        # Find the indices of the relevant resources in the windows matrix
         resource_indexes = np.where(
-            np.isin(resource_windows_matrix.resource_ids, resource_ids)
+            np.isin(resource_windows_matrix.resource_ids, available_resources)
         )[0]
 
-        # get the windows for the resource constraints
-        constraint_windows = resource_windows_matrix.resource_matrix[
-            :, resource_indexes
-        ]
+        # Extract the relevant windows from the matrix
+        constraint_matrix = resource_windows_matrix.resource_matrix[:, resource_indexes]
 
-        # Compute the minimum along axis 1, mask values <= 0, and compute the cumulative sum
-        # devide by the number of resources to not increase the task completion time
-        min_values_matrix = (
-            np.min(constraint_windows, axis=1, keepdims=True)
-            * np.ones_like(constraint_windows)
-            / len(resource_ids)
-        )
+        # Accumulate availability across windows using cumulative sum, resetting at gaps (-1)
+        accumulated_availability = self._cumsum_reset_at_minus_one_2d(constraint_matrix)
 
-        resource_matrix = np.ma.masked_less_equal(
-            x=min_values_matrix,
-            value=0,
-        ).cumsum(axis=0)
+        # Check if accumulated availability meets the task duration requirement
+        if np.sum(accumulated_availability) < task_duration:
+            raise AllocationError("No solution found: Task duration exceeds available windows.")
+
+        # Mask zero values to represent unavailable slots
+        accumulated_availability = np.ma.masked_less_equal(accumulated_availability, 0)
 
         return Matrix(
             resource_ids=resource_ids,
             intervals=resource_windows_matrix.intervals,
-            resource_matrix=resource_matrix,
+            resource_matrix=accumulated_availability,
         )
+
 
     def _apply_constraint_to_resource_windows_matrix(
         self, constraint_matrix: Matrix, resource_windows_matrix: Matrix
