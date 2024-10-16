@@ -55,6 +55,7 @@ class TaskAllocator:
         # process solution to find allocated resource windows
         allocated_windows = self._get_resource_intervals(
             matrix=solution_matrix,
+            resource_windows_dict=resource_windows_dict
         )
 
         # add constraints to allocated windows
@@ -65,6 +66,7 @@ class TaskAllocator:
             allocated_windows.update(
                 self._get_resource_intervals(
                     matrix=constraints_matrix_trimmed,
+                    resource_windows_dict=resource_windows_dict
                 )
             )
 
@@ -160,44 +162,61 @@ class TaskAllocator:
         return col0_value, other_columns_values
 
     def _get_resource_intervals(
-        self,
-        matrix: np.array,
+        self, matrix: Matrix, resource_windows_dict: dict[int, np.ndarray]
     ) -> dict[int, list[tuple[int, int]]]:
         """
-        Gets the resource intervals from the solution matrix. 
-        Always includes the first pair, and only subsequent pairs 
-        if value_end > value_start for any given pair.
+        Extracts the resource intervals from the solution matrix by matching them
+        with the updated windows provided in `resource_windows_dict`.
         """
-        resource_windows_dict = {}
+        resource_windows_output = {}
 
-        # Loop through resource IDs and corresponding intervals
+        # Iterate over each resource ID and its intervals in the solution matrix
         for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
             indexes = self._find_indexes(resource_intervals.data)
 
             if indexes is not None:
                 start_index, end_index = indexes
 
-                segment_intervals = []
-                is_first_pair = True  # Track if this is the first pair
+                # Extract allocated intervals from the matrix
+                allocated_intervals = [
+                    (ceil(round(matrix.intervals[i], 1)), ceil(round(matrix.intervals[i + 1], 1)))
+                    for i in range(start_index, end_index, 2)
+                ]
 
-                # Iterate through the intervals in pairs (i, i+1)
-                for i in range(start_index, end_index, 2):
-                    # Extract values from the resource matrix
-                    value_start = matrix.resource_matrix[i][0]
-                    value_end = matrix.resource_matrix[i + 1][0]
+                # Get the resource’s available windows from the resource_windows_dict
+                updated_windows = resource_windows_dict.get(resource_id, [])
 
-                    # Always add the first pair, or add if value_end > value_start
-                    if is_first_pair or value_end > value_start:
-                        interval_start = ceil(round(matrix.intervals[i], 1))
-                        interval_end = ceil(round(matrix.intervals[i + 1], 1))
+                # Match allocated intervals with the available windows
+                matched_intervals = self._match_intervals_with_windows(
+                    allocated_intervals, updated_windows
+                )
 
-                        segment_intervals.append((interval_start, interval_end))
-                        is_first_pair = False  # Switch off the first-pair flag
+                # Store the matched intervals in the output dictionary
+                resource_windows_output[resource_id] = matched_intervals
 
-                # Store the segment intervals for the current resource
-                resource_windows_dict[resource_id] = segment_intervals
+        return resource_windows_output
 
-        return resource_windows_dict
+    def _match_intervals_with_windows(
+        self, allocated_intervals: list[tuple[int, int]], windows: np.ndarray
+    ) -> list[tuple[int, int]]:
+        """
+        Matches the allocated intervals with the resource's available windows.
+        """
+        matched_intervals = []
+
+        # Iterate over allocated intervals and compare with the available windows
+        for allocated_start, allocated_end in allocated_intervals:
+            for window in windows:
+                window_start, window_end = window["start"], window["end"]
+
+                # Check if there is an overlap between the allocated interval and the window
+                if allocated_end > window_start and allocated_start < window_end:
+                    # Calculate the overlapping interval
+                    matched_start = max(allocated_start, window_start)
+                    matched_end = min(allocated_end, window_end)
+                    matched_intervals.append((matched_start, matched_end))
+
+        return matched_intervals
 
 
     def _mask_smallest_elements_except_top_k_per_row(
