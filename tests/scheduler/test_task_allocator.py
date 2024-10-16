@@ -133,7 +133,8 @@ def test_mask_smallest_elements_except_top_k_per_row(
 )
 def test_cumsum_reset_at_minus_one(task_allocator, array, expected):
     result = task_allocator._cumsum_reset_at_minus_one(array)
-    assert np.array_equal(result, expected)
+    print(f"Input: {array}, Result: {result}, Expected: {expected}")
+    np.testing.assert_array_equal(result, expected)
 
 
 @pytest.mark.parametrize(
