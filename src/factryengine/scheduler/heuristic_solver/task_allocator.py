@@ -220,20 +220,12 @@ class TaskAllocator:
         """
         Computes the cumulative sum but resets to 0 whenever a -1 is encountered.
         """
-        a = a.copy()  # Avoid in-place modification issues
-        result = np.zeros_like(a)  # Initialize result array
+        reset_mask = (a == -1)
+        a[reset_mask] = 0  # Replace -1 with 0 for sum calculation
+        cumsum_result = np.cumsum(a)
+        cumsum_result[reset_mask] = 0  # Reset at gaps
 
-        cumulative_sum = 0  # Track cumulative sum
-        for i in range(len(a)):
-            if a[i] == -1:
-                cumulative_sum = 0  # Reset cumulative sum
-            else:
-                cumulative_sum += a[i]
-            result[i] = cumulative_sum  # Store result
-
-        return result
-
-
+        return cumsum_result
 
     def _cumsum_reset_at_minus_one_2d(self, arr: np.ndarray) -> np.ndarray:
         """
