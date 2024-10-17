@@ -166,71 +166,92 @@ class TaskAllocator:
         self, matrix: Matrix, resource_windows_dict: dict[int, list[tuple[float, float, float, int]]]
     ) -> dict[int, list[tuple[int, int]]]:
         """
-        Extracts the resource intervals from the solution matrix by strictly matching them
-        with the provided original windows in `resource_windows_dict`.
+        Extracts all the resource intervals used from the solution matrix, 
+        including non-contiguous intervals and partial usage.
         """
         resource_windows_output = {}
 
-        # Iterate over each resource ID and its corresponding matrix intervals
+        # Iterate over each resource and its corresponding matrix intervals
         for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
+            print(f"\nResource ID: {resource_id}")
+            print(f"Resource Intervals: {resource_intervals}")
+            print(f"Overall Intervals: {matrix.intervals}")
 
-            # Retrieve the original windows for the resource
-            original_windows = resource_windows_dict.get(resource_id, [])
+            # Get all relevant indexes
+            indexes = self._find_indexes(resource_intervals)
+            print(f"Produced Indexes: {indexes}")
 
-            # If no windows are found, skip this resource
-            if len(original_windows) == 0:
-                print(f"No original windows found for resource {resource_id}")
-                resource_windows_output[resource_id] = []
-                continue
+            # Pair the indexes in groups of 2 (start, end)
+            intervals = []
+            for start, end in zip(indexes[::2], indexes[1::2]):
+                # Use start and end indexes directly without skipping
+                print(f"Start: {start}, End: {end}")
+                interval_start = matrix.intervals[start]
+                interval_end = matrix.intervals[end]
 
-            # Extract start and end points from the original windows into sets for fast lookups
-            window_starts = set(window[0] for window in original_windows)
-            window_ends = set(window[1] for window in original_windows)
+                # Append the interval to the list
+                intervals.append((int(np.round(interval_start)), int(np.round(interval_end))))
 
-            # Prepare matrix intervals
-            interval_starts = matrix.intervals[:-1]
-            interval_ends = matrix.intervals[1:]
-
-            # Vectorized filtering: Keep only intervals where either the start or end matches
-            mask = np.isin(interval_starts, list(window_starts)) | np.isin(interval_ends, list(window_ends))
-            valid_starts = interval_starts[mask]
-            valid_ends = interval_ends[mask]
-
-            # Combine valid starts and ends into intervals
-            filtered_intervals = list(zip(np.ceil(valid_starts).astype(int), np.ceil(valid_ends).astype(int)))
-
-            # Merge contiguous or overlapping intervals
-            resource_windows_output[resource_id] = self.merge_intervals(filtered_intervals)
+            # Store the intervals for the current resource
+            resource_windows_output[resource_id] = intervals
 
         return resource_windows_output
 
-    def merge_intervals(self, intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
+
+    def _find_indexes(self, resource_intervals: np.ma.MaskedArray) -> int | None:
         """
-        Merges contiguous or overlapping intervals into a single interval.
+        Finds the first index where the value is masked, and the next value is non-masked and > 0.
         """
-        if not intervals:
-            return []
+        indexes = []
+        # Shift the mask by 1 to align with the 'next' element comparison
+        current_mask = resource_intervals.mask[:-1]
+        next_mask = resource_intervals.mask[1:]
+        next_values = resource_intervals.data[1:]
 
-        # Use numpy for fast sorting
-        intervals = np.array(intervals)
-        sorted_intervals = intervals[np.argsort(intervals[:, 0])]
+        # Vectorized condition: current is masked, next is non-masked, and next value > 0
+        condition = (current_mask) & (~next_mask) & (next_values > 0)
 
-        # Initialize merged intervals with the first interval
-        merged = [sorted_intervals[0]]
+        # Find the first index where the condition is met
+        indices = np.where(condition)[0]
 
-        # Vectorized merging
-        for start, end in sorted_intervals[1:]:
-            last_start, last_end = merged[-1]
+        first_index = indices[0]
+        last_index = resource_intervals.size-1
 
-            # Merge if overlapping or contiguous
-            if start <= last_end:
-                merged[-1] = (last_start, max(last_end, end))
-            else:
-                merged.append((start, end))
+        indexes = [first_index]  # Start with the first index
 
-        return merged
+        # Iterate through the range between first and last index
+        for i in range(first_index, last_index + 1):
+            current = resource_intervals[i]
+            previous = resource_intervals[i - 1] if i > 0 else 0
+            next_value = resource_intervals[i + 1] if i < last_index else 0
 
+            # Check if the current value is masked
+            is_masked = resource_intervals.mask[i - 1] if i > 0 else False
 
+            # Skip if all values are the same (stable window)
+            if current > 0 and current == previous == next_value:
+                continue
+
+            # Skip increasing trend from masked value
+            if current > 0 and current < next_value and is_masked:
+                continue
+
+            # Detect end of a window
+            if current > 0 and current == next_value and (is_masked or previous < current):
+                indexes.append(i)
+                continue
+
+            # Detect start of a new window
+            if current > 0 and next_value > current and (is_masked or previous == current):
+                indexes.append(i)
+                continue
+
+            # Always add the last index
+            if i == last_index:
+                indexes.append(i)
+
+        # Return the first valid index, or None if no valid index is found
+        return indexes
 
     def _mask_smallest_elements_except_top_k_per_row(
         self, array: np.ma.core.MaskedArray, k
@@ -502,48 +523,47 @@ class TaskAllocator:
         return assignments_matrix
 
 
+    # def _find_indexes(self, arr: np.array) -> tuple[int, int] | None:
+    #     """
+    #     Find the start and end indexes for a valid segment of resource availability.
+    #     This version avoids explicit loops and ensures the start index is correctly identified.
+    #     """
+    #     # If the input is a MaskedArray, handle it accordingly
+    #     if isinstance(arr, np.ma.MaskedArray):
+    #         arr_data = arr.data
+    #         mask = arr.mask
+    #         # Find valid (unmasked and positive) indices
+    #         valid_indices = np.where((~mask) & (arr_data >= 0))[0]
+    #     else:
+    #         valid_indices = np.where(arr >= 0)[0]
 
-    def _find_indexes(self, arr: np.array) -> tuple[int, int] | None:
-        """
-        Find the start and end indexes for a valid segment of resource availability.
-        This version avoids explicit loops and ensures the start index is correctly identified.
-        """
-        # If the input is a MaskedArray, handle it accordingly
-        if isinstance(arr, np.ma.MaskedArray):
-            arr_data = arr.data
-            mask = arr.mask
-            # Find valid (unmasked and positive) indices
-            valid_indices = np.where((~mask) & (arr_data >= 0))[0]
-        else:
-            valid_indices = np.where(arr >= 0)[0]
+    #     # If no valid indices are found, return None (no available resources)
+    #     if valid_indices.size == 0:
+    #         return None
 
-        # If no valid indices are found, return None (no available resources)
-        if valid_indices.size == 0:
-            return None
+    #     # Identify if the start of the array is valid
+    #     start_index = 0 if arr[0] > 0 else valid_indices[0]
 
-        # Identify if the start of the array is valid
-        start_index = 0 if arr[0] > 0 else valid_indices[0]
+    #     # Calculate differences between consecutive indices
+    #     diffs = np.diff(valid_indices)
 
-        # Calculate differences between consecutive indices
-        diffs = np.diff(valid_indices)
+    #     # Identify segment boundaries where there is a gap greater than 1
+    #     gaps = diffs > 1
+    #     segment_boundaries = np.where(gaps)[0]
 
-        # Identify segment boundaries where there is a gap greater than 1
-        gaps = diffs > 1
-        segment_boundaries = np.where(gaps)[0]
+    #     # Insert the start index explicitly to ensure it is considered
+    #     segment_starts = np.insert(segment_boundaries + 1, 0, 0)
+    #     segment_ends = np.append(segment_starts[1:], len(valid_indices))
 
-        # Insert the start index explicitly to ensure it is considered
-        segment_starts = np.insert(segment_boundaries + 1, 0, 0)
-        segment_ends = np.append(segment_starts[1:], len(valid_indices))
+    #     # Always take the first segment (which starts at the earliest valid index)
+    #     start_pos = segment_starts[0]
+    #     end_pos = segment_ends[0] - 1
 
-        # Always take the first segment (which starts at the earliest valid index)
-        start_pos = segment_starts[0]
-        end_pos = segment_ends[0] - 1
+    #     # Convert these segment positions to the actual start and end indices
+    #     start_index = valid_indices[start_pos]
+    #     end_index = valid_indices[end_pos]
 
-        # Convert these segment positions to the actual start and end indices
-        start_index = valid_indices[start_pos]
-        end_index = valid_indices[end_pos]
-
-        return start_index, end_index
+    #     return start_index, end_index
 
 
 
