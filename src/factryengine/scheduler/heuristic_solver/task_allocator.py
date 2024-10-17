@@ -31,6 +31,7 @@ class TaskAllocator:
             resource_windows_matrix=resource_windows_matrix,
             task_duration=task_duration,
         )
+
         if assignments and constraints:
             # update the resource matrix with the constraint matrix
             self._apply_constraint_to_resource_windows_matrix(
@@ -162,61 +163,73 @@ class TaskAllocator:
         return col0_value, other_columns_values
 
     def _get_resource_intervals(
-        self, matrix: Matrix, resource_windows_dict: dict[int, np.ndarray]
+        self, matrix: Matrix, resource_windows_dict: dict[int, list[tuple[float, float, float, int]]]
     ) -> dict[int, list[tuple[int, int]]]:
         """
-        Extracts the resource intervals from the solution matrix by matching them
-        with the updated windows provided in `resource_windows_dict`.
+        Extracts the resource intervals from the solution matrix by strictly matching them
+        with the provided original windows in `resource_windows_dict`.
         """
         resource_windows_output = {}
 
-        # Iterate over each resource ID and its intervals in the solution matrix
+        # Iterate over each resource ID and its corresponding matrix intervals
         for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
-            indexes = self._find_indexes(resource_intervals.data)
 
-            if indexes is not None:
-                start_index, end_index = indexes
+            # Retrieve the original windows for the resource
+            original_windows = resource_windows_dict.get(resource_id, [])
 
-                # Extract allocated intervals from the matrix
-                allocated_intervals = [
-                    (ceil(round(matrix.intervals[i], 1)), ceil(round(matrix.intervals[i + 1], 1)))
-                    for i in range(start_index, end_index, 2)
-                ]
+            # If no windows are found, skip this resource
+            if len(original_windows) == 0:
+                print(f"No original windows found for resource {resource_id}")
+                resource_windows_output[resource_id] = []
+                continue
 
-                # Get the resource’s available windows from the resource_windows_dict
-                updated_windows = resource_windows_dict.get(resource_id, [])
+            # Extract start and end points from the original windows into sets for fast lookups
+            window_starts = set(window[0] for window in original_windows)
+            window_ends = set(window[1] for window in original_windows)
 
-                # Match allocated intervals with the available windows
-                matched_intervals = self._match_intervals_with_windows(
-                    allocated_intervals, updated_windows
-                )
+            # Prepare matrix intervals
+            interval_starts = matrix.intervals[:-1]
+            interval_ends = matrix.intervals[1:]
 
-                # Store the matched intervals in the output dictionary
-                resource_windows_output[resource_id] = matched_intervals
+            # Vectorized filtering: Keep only intervals where either the start or end matches
+            mask = np.isin(interval_starts, list(window_starts)) | np.isin(interval_ends, list(window_ends))
+            valid_starts = interval_starts[mask]
+            valid_ends = interval_ends[mask]
+
+            # Combine valid starts and ends into intervals
+            filtered_intervals = list(zip(np.ceil(valid_starts).astype(int), np.ceil(valid_ends).astype(int)))
+
+            # Merge contiguous or overlapping intervals
+            resource_windows_output[resource_id] = self.merge_intervals(filtered_intervals)
 
         return resource_windows_output
 
-    def _match_intervals_with_windows(
-        self, allocated_intervals: list[tuple[int, int]], windows: np.ndarray
-    ) -> list[tuple[int, int]]:
+    def merge_intervals(self, intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
         """
-        Matches the allocated intervals with the resource's available windows.
+        Merges contiguous or overlapping intervals into a single interval.
         """
-        matched_intervals = []
+        if not intervals:
+            return []
 
-        # Iterate over allocated intervals and compare with the available windows
-        for allocated_start, allocated_end in allocated_intervals:
-            for window in windows:
-                window_start, window_end = window["start"], window["end"]
+        # Use numpy for fast sorting
+        intervals = np.array(intervals)
+        sorted_intervals = intervals[np.argsort(intervals[:, 0])]
 
-                # Check if there is an overlap between the allocated interval and the window
-                if allocated_end > window_start and allocated_start < window_end:
-                    # Calculate the overlapping interval
-                    matched_start = max(allocated_start, window_start)
-                    matched_end = min(allocated_end, window_end)
-                    matched_intervals.append((matched_start, matched_end))
+        # Initialize merged intervals with the first interval
+        merged = [sorted_intervals[0]]
 
-        return matched_intervals
+        # Vectorized merging
+        for start, end in sorted_intervals[1:]:
+            last_start, last_end = merged[-1]
+
+            # Merge if overlapping or contiguous
+            if start <= last_end:
+                merged[-1] = (last_start, max(last_end, end))
+            else:
+                merged.append((start, end))
+
+        return merged
+
 
 
     def _mask_smallest_elements_except_top_k_per_row(
@@ -383,47 +396,50 @@ class TaskAllocator:
 
     def _create_constraints_matrix(
         self,
-        resource_constraints: list[Resource],
+        resource_constraints: set[Resource],
         resource_windows_matrix: Matrix,
         task_duration: int,
     ) -> Matrix:
         """
-        Creates a constraints matrix by accumulating availability across multiple windows,
-        following the structure of the resource group matrix logic.
+        Checks if the resource constraints are available and updates the resource windows matrix.
         """
         if not resource_constraints:
             return None
 
-        # Extract the resource IDs from the constraints
+        # get the constraint resource ids
         resource_ids = np.array([resource.id for resource in resource_constraints])
 
-        # Find the intersection of the resource constraints and the windows matrix
-        available_resources = np.intersect1d(resource_ids, resource_windows_matrix.resource_ids)
-        if len(available_resources) == 0:
-            return None
+        # check if all resource constraints are available
+        if not np.all(np.isin(resource_ids, resource_windows_matrix.resource_ids)):
+            raise AllocationError("All resource constraints are not available")
 
-        # Find the indices of the relevant resources in the windows matrix
+        # Find the indices of the available resources in the windows matrix
         resource_indexes = np.where(
-            np.isin(resource_windows_matrix.resource_ids, available_resources)
+            np.isin(resource_windows_matrix.resource_ids, resource_ids)
         )[0]
 
-        # Extract the relevant windows from the matrix
-        constraint_matrix = resource_windows_matrix.resource_matrix[:, resource_indexes]
+        # get the windows for the resource constraints
+        constraint_windows = resource_windows_matrix.resource_matrix[
+            :, resource_indexes
+        ]
 
-        # Accumulate availability across windows using cumulative sum, resetting at gaps (-1)
-        accumulated_availability = self._cumsum_reset_at_minus_one_2d(constraint_matrix)
+        # Compute the minimum along axis 1, mask values <= 0, and compute the cumulative sum
+        # devide by the number of resources to not increase the task completion time
+        min_values_matrix = (
+            np.min(constraint_windows, axis=1, keepdims=True)
+            * np.ones_like(constraint_windows)
+            / len(resource_ids)
+        )
 
-        # Check if accumulated availability meets the task duration requirement
-        if np.sum(accumulated_availability) < task_duration:
-            raise AllocationError("No solution found: Task duration exceeds available windows.")
-
-        # Mask zero values to represent unavailable slots
-        accumulated_availability = np.ma.masked_less_equal(accumulated_availability, 0)
+        resource_matrix = np.ma.masked_less_equal(
+            x=min_values_matrix,
+            value=0,
+        ).cumsum(axis=0)
 
         return Matrix(
             resource_ids=resource_ids,
             intervals=resource_windows_matrix.intervals,
-            resource_matrix=accumulated_availability,
+            resource_matrix=resource_matrix,
         )
 
 
