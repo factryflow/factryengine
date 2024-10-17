@@ -173,19 +173,19 @@ class TaskAllocator:
 
         # Iterate over each resource and its corresponding matrix intervals
         for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
-            print(f"\nResource ID: {resource_id}")
-            print(f"Resource Intervals: {resource_intervals}")
-            print(f"Overall Intervals: {matrix.intervals}")
+            # print(f"\nResource ID: {resource_id}")
+            # print(f"Resource Intervals: {resource_intervals}")
+            # print(f"Overall Intervals: {matrix.intervals}")
 
             # Get all relevant indexes
             indexes = self._find_indexes(resource_intervals)
-            print(f"Produced Indexes: {indexes}")
+            # print(f"Produced Indexes: {indexes}")
 
             # Pair the indexes in groups of 2 (start, end)
             intervals = []
             for start, end in zip(indexes[::2], indexes[1::2]):
                 # Use start and end indexes directly without skipping
-                print(f"Start: {start}, End: {end}")
+                # print(f"Start: {start}, End: {end}")
                 interval_start = matrix.intervals[start]
                 interval_end = matrix.intervals[end]
 
@@ -214,7 +214,7 @@ class TaskAllocator:
         # Find the first index where the condition is met
         indices = np.where(condition)[0]
 
-        first_index = indices[0]
+        first_index = indices[0] if len(indices) > 0 else 0
         last_index = resource_intervals.size-1
 
         indexes = [first_index]  # Start with the first index

@@ -71,8 +71,6 @@ class HeuristicSolver:
                     task_duration=task.duration,
                     constraints=task.constraints,
                 )
-
-                print(f"Allocated resources for task {task_id}: {allocated_resource_windows_dict}")
             except AllocationError as e:
                 self.mark_task_as_unscheduled(task_id=task_id, error_message=str(e))
                 continue
