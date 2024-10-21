@@ -31,8 +31,8 @@ def test_solve_task_end(task_allocator):
 def test_get_resource_intervals_continuous(task_allocator):
     # Test case continuous values 1 task 2 resources
     solution_resource_ids = np.array([1, 2])
-    solution_intervals = np.array([0, 1, 2, 3])
-    resource_matrix = np.ma.array([[0, 0], [1, 1]])
+    solution_intervals = np.array([0, 1])
+    resource_matrix = np.ma.array([[0, 0], [1, 1]],  mask=[[False, False], [False, False]],)
     solution_matrix = Matrix(
         resource_ids=solution_resource_ids,
         intervals=solution_intervals,
@@ -45,15 +45,15 @@ def test_get_resource_intervals_continuous(task_allocator):
 def test_get_resource_intervals_windowed(task_allocator):
     # Test case windowed values 1 task 1 resource
     solution_resource_ids = np.array([1])
-    solution_intervals = np.array([0, 1, 4, 5, 7, 8])
-    resource_matrix = np.ma.array([[0], [1], [4], [5], [7], [8]])
+    solution_intervals = np.array([0, 2, 3, 4])
+    resource_matrix = np.ma.array([[0], [2], [2], [3]], mask=[[False], [False], [False], [False]],)
     solution_matrix = Matrix(
         resource_ids=solution_resource_ids,
         intervals=solution_intervals,
         resource_matrix=resource_matrix,
     )
     result = task_allocator._get_resource_intervals(solution_matrix)
-    expeceted = {1: [(0, 1), (4, 5), (7, 8)]}
+    expeceted = {1: [(0, 2), (3, 4)]}
     assert result == expeceted
 
 
