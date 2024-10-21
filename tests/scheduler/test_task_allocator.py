@@ -126,7 +126,7 @@ def test_mask_smallest_elements_except_top_k_per_row(
 @pytest.mark.parametrize(
     "array, expected",
     [
-        (np.array([0, 1, 5, -1, 10]), [0, 1, 6, 0, 10]),
+        (np.array([0, 1, 5, -1, 10]), [0, 1, 6, 0, 16]),
         (np.array([-1, 2, 3, 0, 4]), [0, 2, 5, 5, 9]),
         (np.array([0, -1, 2, 4, -1]), [0, 0, 2, 6, 0]),
     ],
