@@ -220,9 +220,8 @@ def test_diff_and_zero_negatives(array, expected):
     "array, expected",
     [
         # Full valid sequence without gaps
-        (np.array([0, 1, 2, 3, 4]), (0, 4)),
-        # Sequence with repeated values, expecting first valid segment
-        (np.array([0, 3]), (0, 1)),  # This one might need revisiting if logic changes
+    (np.ma.array([0, 2, 2, 3], mask=[False, False, False, False]), ([0, 1, 2, 3])),
+    (np.ma.array([0, 3], mask=[False, False]), ([0, 1])), 
     ],
 )
 def test_find_indexes(array, expected):
