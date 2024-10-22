@@ -45,29 +45,41 @@ class TaskAllocator:
             task_duration=task_duration,
         )
 
-        # matrix to solve
-        matrix_to_solve = assignments_matrix or constraints_matrix
+        if assignments_matrix and constraints_matrix:
+            # find the solution for assignments
+            solution_matrix = self._solve_matrix(
+                matrix=assignments_matrix,
+                task_duration=task_duration,
+            )
 
-        # find the solution
-        solution_matrix = self._solve_matrix(
-            matrix=matrix_to_solve,
-            task_duration=task_duration,
-        )
+            # find the solution for constraints
+            constraints_solution = self._solve_matrix(
+                matrix=constraints_matrix,
+                task_duration=task_duration,
+            )
+        else:
+            # matrix to solve
+            matrix_to_solve = assignments_matrix or constraints_matrix
+
+            # find the solution
+            solution_matrix = self._solve_matrix(
+                matrix=matrix_to_solve,
+                task_duration=task_duration,
+            )
+
         # process solution to find allocated resource windows
         allocated_windows = self._get_resource_intervals(
-            matrix=solution_matrix,
-            resource_windows_dict=resource_windows_dict
+            matrix=solution_matrix
         )
 
         # add constraints to allocated windows
         if constraints and assignments:
             constraints_matrix_trimmed = Matrix.trim_end(
-                original_matrix=constraints_matrix, trim_matrix=solution_matrix
+                original_matrix=constraints_solution, trim_matrix=solution_matrix
             )
             allocated_windows.update(
                 self._get_resource_intervals(
-                    matrix=constraints_matrix_trimmed,
-                    resource_windows_dict=resource_windows_dict
+                    matrix=constraints_matrix_trimmed
                 )
             )
 
@@ -163,7 +175,7 @@ class TaskAllocator:
         return col0_value, other_columns_values
 
     def _get_resource_intervals(
-        self, matrix: Matrix, resource_windows_dict: dict[int, list[tuple[float, float, float, int]]]
+        self, matrix: Matrix
     ) -> dict[int, list[tuple[int, int]]]:
         """
         Extracts all the resource intervals used from the solution matrix, 
@@ -173,13 +185,10 @@ class TaskAllocator:
 
         # Iterate over each resource and its corresponding matrix intervals
         for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
-            # print(f"\nResource ID: {resource_id}")
-            # print(f"Resource Intervals: {resource_intervals}")
-            # print(f"Overall Intervals: {matrix.intervals}")
+            
 
             # Get all relevant indexes
             indexes = self._find_indexes(resource_intervals)
-            # print(f"Produced Indexes: {indexes}")
 
             # Pair the indexes in groups of 2 (start, end)
             intervals = []
@@ -226,23 +235,35 @@ class TaskAllocator:
             next_value = resource_intervals[i + 1] if i < last_index else 0
 
             # Check if the current value is masked
-            is_masked = resource_intervals.mask[i - 1] if i > 0 else False
+            is_prev_masked = resource_intervals.mask[i - 1] if i > 0 else False
+            is_curr_masked = resource_intervals.mask[i]
+            is_next_masked = resource_intervals.mask[i+1] if i < last_index else False
 
             # Skip if all values are the same (stable window)
             if current > 0 and current == previous == next_value:
                 continue
 
             # Skip increasing trend from masked value
-            if current > 0 and current < next_value and is_masked:
+            if current > 0 and current < next_value and is_prev_masked:
                 continue
 
             # Detect end of a window
-            if current > 0 and current == next_value and (is_masked or previous < current):
+            if current > 0 and current == next_value and (is_prev_masked or previous < current):
+                indexes.append(i)
+                continue
+
+            # Detect end of window using masks 
+            if current > 0 and is_next_masked and not is_curr_masked:
                 indexes.append(i)
                 continue
 
             # Detect start of a new window
-            if current > 0 and next_value > current and (is_masked or previous == current):
+            if current > 0 and next_value > current and (is_prev_masked or previous == current):
+                indexes.append(i)
+                continue
+
+            # Detect start of window using masks
+            if is_curr_masked and previous > 0 and next_value > 0:
                 indexes.append(i)
                 continue
 
