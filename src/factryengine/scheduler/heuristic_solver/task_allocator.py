@@ -209,7 +209,7 @@ class TaskAllocator:
 
     def _find_indexes(self, resource_intervals: np.ma.MaskedArray) -> int | None:
         """
-        Finds the first index where the value is masked, and the next value is non-masked and > 0.
+        Finds relevant indexes in the resource intervals where the resource is used.
         """
         indexes = []
         # Shift the mask by 1 to align with the 'next' element comparison
