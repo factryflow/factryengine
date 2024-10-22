@@ -1,5 +1,6 @@
 # Prototyping Notebooks
 notebooks/
+*.ipynb
 
 # Test data
 inputs/
