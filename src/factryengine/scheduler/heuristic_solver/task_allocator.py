@@ -205,13 +205,8 @@ class TaskAllocator:
             resource_windows_output[resource_id] = intervals
 
         return resource_windows_output
-
-
-    def _find_indexes(self, resource_intervals: np.ma.MaskedArray) -> int | None:
-        """
-        Finds relevant indexes in the resource intervals where the resource is used.
-        """
-        indexes = []
+    
+    def _find_first_index(self, resource_intervals: np.ma.MaskedArray) -> int | None:
         # Shift the mask by 1 to align with the 'next' element comparison
         current_mask = resource_intervals.mask[:-1]
         next_mask = resource_intervals.mask[1:]
@@ -224,9 +219,36 @@ class TaskAllocator:
         indices = np.where(condition)[0]
 
         first_index = indices[0] if len(indices) > 0 else 0
+
+        next_non_zero_index = np.where(
+            (~resource_intervals.mask[first_index + 2:])  # Non-masked (non-zero)
+                & (resource_intervals.mask[first_index + 1:-1])  # Previous value masked
+        )[0]
+
+        # Adjust x to align with the original array's indices
+        next_non_zero_index = (
+            (first_index + 2 + next_non_zero_index[0]) if len(next_non_zero_index) > 0 else None
+        )
+
+        if next_non_zero_index and resource_intervals[next_non_zero_index] == resource_intervals[first_index+1]:
+            first_index = next_non_zero_index
+
+        return first_index
+
+
+    def _find_indexes(self, resource_intervals: np.ma.MaskedArray) -> int | None:
+        """
+        Finds relevant indexes in the resource intervals where the resource is used.
+        """
+        # Mask where the data in resource_intervals is 0
+        resource_intervals = np.ma.masked_where(resource_intervals == 0.0, resource_intervals)
+
+        indexes = []
+        first_index = self._find_first_index(resource_intervals)
         last_index = resource_intervals.size-1
 
         indexes = [first_index]  # Start with the first index
+        is_last_window_start = True  # Flag to indicate the start of a window
 
         # Iterate through the range between first and last index
         for i in range(first_index, last_index + 1):
@@ -248,23 +270,27 @@ class TaskAllocator:
                 continue
 
             # Detect end of a window
-            if current > 0 and current == next_value and (is_prev_masked or previous < current):
+            if current > 0 and current == next_value and (is_prev_masked or previous < current) and is_last_window_start:
                 indexes.append(i)
+                is_last_window_start = False
                 continue
 
             # Detect end of window using masks 
-            if current > 0 and is_next_masked and not is_curr_masked:
+            if current > 0 and is_next_masked and not is_curr_masked and is_last_window_start:
                 indexes.append(i)
+                is_last_window_start = False
                 continue
 
             # Detect start of a new window
-            if current > 0 and next_value > current and (is_prev_masked or previous == current):
+            if current > 0 and next_value > current and (is_prev_masked or previous == current) and not is_last_window_start:
                 indexes.append(i)
+                is_last_window_start = True
                 continue
 
             # Detect start of window using masks
-            if is_curr_masked and previous > 0 and next_value > 0:
+            if is_curr_masked and previous > 0 and next_value > 0 and not is_last_window_start:
                 indexes.append(i)
+                is_last_window_start = True
                 continue
 
             # Always add the last index
