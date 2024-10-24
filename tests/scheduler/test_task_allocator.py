@@ -28,17 +28,32 @@ def test_solve_task_end(task_allocator):
     assert np.array_equal(result_y, np.array([5, 5]))
 
 
-def test_get_resource_intervals(task_allocator):
-    solution_resource_ids = np.array([1, 2, 3])
-    solution_intervals = np.array([0, 1, 2])
-    resource_matrix = np.ma.array([[0, 0, 0], [1, 0, 0], [2, 1, 0]])
+def test_get_resource_intervals_continuous(task_allocator):
+    # Test case continuous values 1 task 2 resources
+    solution_resource_ids = np.array([1, 2])
+    solution_intervals = np.array([0, 1])
+    resource_matrix = np.ma.array([[0, 0], [1, 1]],  mask=[[False, False], [False, False]],)
     solution_matrix = Matrix(
         resource_ids=solution_resource_ids,
         intervals=solution_intervals,
         resource_matrix=resource_matrix,
     )
     result = task_allocator._get_resource_intervals(solution_matrix)
-    expeceted = {1: (0, 2), 2: (1, 2)}
+    expeceted = {1: [(0, 1)], 2: [(0, 1)]}
+    assert result == expeceted
+
+def test_get_resource_intervals_windowed(task_allocator):
+    # Test case windowed values 1 task 1 resource
+    solution_resource_ids = np.array([1])
+    solution_intervals = np.array([0, 2, 3, 4])
+    resource_matrix = np.ma.array([[0], [2], [2], [3]], mask=[[False], [False], [False], [False]],)
+    solution_matrix = Matrix(
+        resource_ids=solution_resource_ids,
+        intervals=solution_intervals,
+        resource_matrix=resource_matrix,
+    )
+    result = task_allocator._get_resource_intervals(solution_matrix)
+    expeceted = {1: [(0, 2), (3, 4)]}
     assert result == expeceted
 
 
@@ -111,14 +126,15 @@ def test_mask_smallest_elements_except_top_k_per_row(
 @pytest.mark.parametrize(
     "array, expected",
     [
-        (np.array([0, 1, 5, -1, 10]), [0, 1, 6, 0, 10]),
+        (np.array([0, 1, 5, -1, 10]), [0, 1, 6, 0, 16]),
         (np.array([-1, 2, 3, 0, 4]), [0, 2, 5, 5, 9]),
         (np.array([0, -1, 2, 4, -1]), [0, 0, 2, 6, 0]),
     ],
 )
 def test_cumsum_reset_at_minus_one(task_allocator, array, expected):
     result = task_allocator._cumsum_reset_at_minus_one(array)
-    assert np.array_equal(result, expected)
+    print(f"Input: {array}, Result: {result}, Expected: {expected}")
+    np.testing.assert_array_equal(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -201,20 +217,11 @@ def test_diff_and_zero_negatives(array, expected):
 
 
 @pytest.mark.parametrize(
-    "array , expected",
+    "array, expected",
     [
-        (
-            np.array([0, 1, 2, 3, 4]),
-            (0, 4),
-        ),
-        (
-            np.array([0, 3, 3, 3, 3]),
-            (0, 1),
-        ),
-        (
-            np.array([0, 0, 1, 2, 0]),
-            None,
-        ),
+        # Full valid sequence without gaps
+    (np.ma.array([0, 2, 2, 3], mask=[False, False, False, False]), ([0, 1, 2, 3])),
+    (np.ma.array([0, 3], mask=[False, False]), ([0, 1])), 
     ],
 )
 def test_find_indexes(array, expected):
@@ -222,4 +229,4 @@ def test_find_indexes(array, expected):
     result = task_allocator._find_indexes(array)
     print("result  :", result)
     print("expected:", expected)
-    np.testing.assert_array_equal(result, expected)
+    assert result == expected

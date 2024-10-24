@@ -31,6 +31,7 @@ class TaskAllocator:
             resource_windows_matrix=resource_windows_matrix,
             task_duration=task_duration,
         )
+
         if assignments and constraints:
             # update the resource matrix with the constraint matrix
             self._apply_constraint_to_resource_windows_matrix(
@@ -44,27 +45,41 @@ class TaskAllocator:
             task_duration=task_duration,
         )
 
-        # matrix to solve
-        matrix_to_solve = assignments_matrix or constraints_matrix
+        if assignments_matrix and constraints_matrix:
+            # find the solution for assignments
+            solution_matrix = self._solve_matrix(
+                matrix=assignments_matrix,
+                task_duration=task_duration,
+            )
 
-        # find the solution
-        solution_matrix = self._solve_matrix(
-            matrix=matrix_to_solve,
-            task_duration=task_duration,
-        )
+            # find the solution for constraints
+            constraints_solution = self._solve_matrix(
+                matrix=constraints_matrix,
+                task_duration=task_duration,
+            )
+        else:
+            # matrix to solve
+            matrix_to_solve = assignments_matrix or constraints_matrix
+
+            # find the solution
+            solution_matrix = self._solve_matrix(
+                matrix=matrix_to_solve,
+                task_duration=task_duration,
+            )
+
         # process solution to find allocated resource windows
         allocated_windows = self._get_resource_intervals(
-            matrix=solution_matrix,
+            matrix=solution_matrix
         )
 
         # add constraints to allocated windows
         if constraints and assignments:
             constraints_matrix_trimmed = Matrix.trim_end(
-                original_matrix=constraints_matrix, trim_matrix=solution_matrix
+                original_matrix=constraints_solution, trim_matrix=solution_matrix
             )
             allocated_windows.update(
                 self._get_resource_intervals(
-                    matrix=constraints_matrix_trimmed,
+                    matrix=constraints_matrix_trimmed
                 )
             )
 
@@ -160,27 +175,130 @@ class TaskAllocator:
         return col0_value, other_columns_values
 
     def _get_resource_intervals(
-        self,
-        matrix: np.array,
-    ) -> dict[int, tuple[int, int]]:
+        self, matrix: Matrix
+    ) -> dict[int, list[tuple[int, int]]]:
         """
-        gets the resource intervals from the solution matrix.
+        Extracts all the resource intervals used from the solution matrix, 
+        including non-contiguous intervals and partial usage.
         """
-        end_index = matrix.resource_matrix.shape[0] - 1
-        resource_windows_dict = {}
-        # loop through resource ids and resource intervals
-        for resource_id, resource_intervals in zip(
-            matrix.resource_ids, matrix.resource_matrix.T
-        ):
-            # ensure only continuous intervals are selected
-            indexes = self._find_indexes(resource_intervals.data)
-            if indexes is not None:
-                start_index, end_index = indexes
-                resource_windows_dict[resource_id] = (
-                    ceil(round(matrix.intervals[start_index], 1)),
-                    ceil(round(matrix.intervals[end_index], 1)),
-                )
-        return resource_windows_dict
+        resource_windows_output = {}
+
+        # Iterate over each resource and its corresponding matrix intervals
+        for resource_id, resource_intervals in zip(matrix.resource_ids, matrix.resource_matrix.T):
+            
+
+            # Get all relevant indexes
+            indexes = self._find_indexes(resource_intervals)
+
+            # Pair the indexes in groups of 2 (start, end)
+            intervals = []
+            for start, end in zip(indexes[::2], indexes[1::2]):
+                # Use start and end indexes directly without skipping
+                # print(f"Start: {start}, End: {end}")
+                interval_start = matrix.intervals[start]
+                interval_end = matrix.intervals[end]
+
+                # Append the interval to the list
+                intervals.append((int(np.round(interval_start)), int(np.round(interval_end))))
+
+            # Store the intervals for the current resource
+            resource_windows_output[resource_id] = intervals
+
+        return resource_windows_output
+    
+    def _find_first_index(self, resource_intervals: np.ma.MaskedArray) -> int | None:
+        # Shift the mask by 1 to align with the 'next' element comparison
+        current_mask = resource_intervals.mask[:-1]
+        next_mask = resource_intervals.mask[1:]
+        next_values = resource_intervals.data[1:]
+
+        # Vectorized condition: current is masked, next is non-masked, and next value > 0
+        condition = (current_mask) & (~next_mask) & (next_values > 0)
+
+        # Find the first index where the condition is met
+        indices = np.where(condition)[0]
+
+        first_index = indices[0] if len(indices) > 0 else 0
+
+        next_non_zero_index = np.where(
+            (~resource_intervals.mask[first_index + 2:])  # Non-masked (non-zero)
+                & (resource_intervals.mask[first_index + 1:-1])  # Previous value masked
+        )[0]
+
+        # Adjust x to align with the original array's indices
+        next_non_zero_index = (
+            (first_index + 2 + next_non_zero_index[0]) if len(next_non_zero_index) > 0 else None
+        )
+
+        if next_non_zero_index and resource_intervals[next_non_zero_index] == resource_intervals[first_index+1]:
+            first_index = next_non_zero_index
+
+        return first_index
+
+
+    def _find_indexes(self, resource_intervals: np.ma.MaskedArray) -> int | None:
+        """
+        Finds relevant indexes in the resource intervals where the resource is used.
+        """
+        # Mask where the data in resource_intervals is 0
+        resource_intervals = np.ma.masked_where(resource_intervals == 0.0, resource_intervals)
+
+        indexes = []
+        first_index = self._find_first_index(resource_intervals)
+        last_index = resource_intervals.size-1
+
+        indexes = [first_index]  # Start with the first index
+        is_last_window_start = True  # Flag to indicate the start of a window
+
+        # Iterate through the range between first and last index
+        for i in range(first_index, last_index + 1):
+            current = resource_intervals[i]
+            previous = resource_intervals[i - 1] if i > 0 else 0
+            next_value = resource_intervals[i + 1] if i < last_index else 0
+
+            # Check if the current value is masked
+            is_prev_masked = resource_intervals.mask[i - 1] if i > 0 else False
+            is_curr_masked = resource_intervals.mask[i]
+            is_next_masked = resource_intervals.mask[i+1] if i < last_index else False
+
+            # Skip if all values are the same (stable window)
+            if current > 0 and current == previous == next_value:
+                continue
+
+            # Skip increasing trend from masked value
+            if current > 0 and current < next_value and is_prev_masked:
+                continue
+
+            # Detect end of a window
+            if current > 0 and current == next_value and (is_prev_masked or previous < current) and is_last_window_start:
+                indexes.append(i)
+                is_last_window_start = False
+                continue
+
+            # Detect end of window using masks 
+            if current > 0 and is_next_masked and not is_curr_masked and is_last_window_start:
+                indexes.append(i)
+                is_last_window_start = False
+                continue
+
+            # Detect start of a new window
+            if current > 0 and next_value > current and (is_prev_masked or previous == current) and not is_last_window_start:
+                indexes.append(i)
+                is_last_window_start = True
+                continue
+
+            # Detect start of window using masks
+            if is_curr_masked and previous > 0 and next_value > 0 and not is_last_window_start:
+                indexes.append(i)
+                is_last_window_start = True
+                continue
+
+            # Always add the last index
+            if i == last_index:
+                indexes.append(i)
+
+        # Return the first valid index, or None if no valid index is found
+        return indexes
 
     def _mask_smallest_elements_except_top_k_per_row(
         self, array: np.ma.core.MaskedArray, k
@@ -200,17 +318,19 @@ class TaskAllocator:
 
     def _cumsum_reset_at_minus_one(self, a: np.ndarray) -> np.ndarray:
         """
-        Computes the cumulative sum of an array but resets the sum to zero whenever a
-        -1 is encountered. This is a helper method used in the creation of the resource
-        windows matrix.
+        Computes the cumulative sum but resets to 0 whenever a -1 is encountered.
         """
-        reset_at = a == -1
-        a[reset_at] = 0
-        without_reset = a.cumsum()
-        overcount = np.maximum.accumulate(without_reset * reset_at)
-        return without_reset - overcount
+        reset_mask = (a == -1)
+        a[reset_mask] = 0  # Replace -1 with 0 for sum calculation
+        cumsum_result = np.cumsum(a)
+        cumsum_result[reset_mask] = 0  # Reset at gaps
+
+        return cumsum_result
 
     def _cumsum_reset_at_minus_one_2d(self, arr: np.ndarray) -> np.ndarray:
+        """
+        Applies cumulative sum along the columns of a 2D array and resets at gaps (-1).
+        """
         return np.apply_along_axis(self._cumsum_reset_at_minus_one, axis=0, arr=arr)
 
     def _replace_masked_values_with_nan(
@@ -390,6 +510,7 @@ class TaskAllocator:
             resource_matrix=resource_matrix,
         )
 
+
     def _apply_constraint_to_resource_windows_matrix(
         self, constraint_matrix: Matrix, resource_windows_matrix: Matrix
     ) -> None:
@@ -448,36 +569,50 @@ class TaskAllocator:
 
         return assignments_matrix
 
-    def _find_indexes(self, arr: np.array) -> tuple[int, int] | None:
-        """
-        Find the start and end indexes from the last zero to the last number with no increase in a NumPy array.
-        """
-        # if last element is zero return None
-        if arr[-1] == 0:
-            return None
 
-        # Find the index of the last zero
-        zero_indexes = np.nonzero(arr == 0)[0]
-        if zero_indexes.size > 0:
-            start_index = zero_indexes[-1]
-        else:
-            return None
+    # def _find_indexes(self, arr: np.array) -> tuple[int, int] | None:
+    #     """
+    #     Find the start and end indexes for a valid segment of resource availability.
+    #     This version avoids explicit loops and ensures the start index is correctly identified.
+    #     """
+    #     # If the input is a MaskedArray, handle it accordingly
+    #     if isinstance(arr, np.ma.MaskedArray):
+    #         arr_data = arr.data
+    #         mask = arr.mask
+    #         # Find valid (unmasked and positive) indices
+    #         valid_indices = np.where((~mask) & (arr_data >= 0))[0]
+    #     else:
+    #         valid_indices = np.where(arr >= 0)[0]
 
-        # Use np.diff to find where the array stops increasing
-        diffs = np.diff(arr[start_index:])
+    #     # If no valid indices are found, return None (no available resources)
+    #     if valid_indices.size == 0:
+    #         return None
 
-        # Find where the difference is less than or equal to zero (non-increasing sequence)
-        non_increasing = np.where(diffs == 0)[0]
+    #     # Identify if the start of the array is valid
+    #     start_index = 0 if arr[0] > 0 else valid_indices[0]
 
-        if non_increasing.size > 0:
-            # The end index is the last non-increasing index + 1 to account for the difference in np.diff indexing
-            end_index = non_increasing[0] + start_index
-        else:
-            end_index = (
-                arr.size - 1
-            )  # If the array always increases, end at the last index
+    #     # Calculate differences between consecutive indices
+    #     diffs = np.diff(valid_indices)
 
-        return start_index, end_index
+    #     # Identify segment boundaries where there is a gap greater than 1
+    #     gaps = diffs > 1
+    #     segment_boundaries = np.where(gaps)[0]
+
+    #     # Insert the start index explicitly to ensure it is considered
+    #     segment_starts = np.insert(segment_boundaries + 1, 0, 0)
+    #     segment_ends = np.append(segment_starts[1:], len(valid_indices))
+
+    #     # Always take the first segment (which starts at the earliest valid index)
+    #     start_pos = segment_starts[0]
+    #     end_pos = segment_ends[0] - 1
+
+    #     # Convert these segment positions to the actual start and end indices
+    #     start_index = valid_indices[start_pos]
+    #     end_index = valid_indices[end_pos]
+
+    #     return start_index, end_index
+
+
 
     def _linear_interpolate_nan(self, y: np.ndarray, x: np.ndarray) -> np.ndarray:
         """

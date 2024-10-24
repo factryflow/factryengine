@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator, validator
+from pydantic import BaseModel, Field, model_validator, validator, PrivateAttr
 
 from .resource import Resource, ResourceGroup
 
@@ -44,15 +44,16 @@ class Assignment(BaseModel):
 
 
 class Task(BaseModel):
-    id: int
+    id: int | str
     name: str = ""
     duration: int = Field(gt=0)
     priority: int = Field(gt=0)
     assignments: list[Assignment] = []
     constraints: set[Resource] = set()
-    predecessor_ids: set[int] = set()
+    predecessor_ids: set[int] | set[str] = set()
     predecessor_delay: int = Field(0, gt=0)
     quantity: int = Field(None, gt=0)
+    _batch_id: int = PrivateAttr(None)
 
     def __hash__(self):
         return hash(self.id)
@@ -85,3 +86,12 @@ class Task(BaseModel):
     def get_id(self) -> int:
         """returns the task id"""
         return self.id
+    
+    @property
+    def batch_id(self):
+        """returns the batch id of the task"""
+        return self._batch_id
+    
+    def set_batch_id(self, batch_id):
+        """sets the batch id of the task"""
+        self._batch_id = batch_id

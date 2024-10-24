@@ -1,5 +1,9 @@
 # Prototyping Notebooks
 notebooks/
+*.ipynb
+
+# Test data
+inputs/
 
 # vscode settings
 .vscode/

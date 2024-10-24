@@ -56,9 +56,12 @@ class Matrix:
         Trims a Matrix based on another
         """
         new_intervals = original_matrix.intervals[: len(trim_matrix.intervals)]
-        # Check if intervals are the same
 
-        if not np.array_equal(new_intervals, trim_matrix.intervals):
+        # if not np.array_equal(new_intervals, trim_matrix.intervals):
+        #     raise ValueError("All matrices must have the same intervals")
+
+        # Used np.allclose to allow for small differences in the intervals
+        if not np.allclose(new_intervals, trim_matrix.intervals, atol=1e-8):
             raise ValueError("All matrices must have the same intervals")
 
         return cls(
