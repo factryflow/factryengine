@@ -47,25 +47,71 @@ class WindowManager:
         """
         Removes the allocated intervals from the resource windows.
         """
-        for resource_id, trim_intervals in allocated_resource_windows_dict.items():
-            if not trim_intervals:
+        for resource_id, intervals_to_remove in allocated_resource_windows_dict.items():
+            if not intervals_to_remove:
                 continue
 
-            # Get the earliest start and latest end of the intervals
-            combined_start = trim_intervals[0][0]
-            combined_end = trim_intervals[-1][1]
+            # Get the resource's current available windows (structured array)
+            resource_windows = self.resource_windows_dict[resource_id]
 
-            # Create a single trim interval
-            combined_trim_interval = (combined_start, combined_end)
+            # Remove each interval individually
+            for interval in intervals_to_remove:
+                resource_windows = self._remove_interval_from_windows(resource_windows, interval)
 
-            # Get the window to trim
-            window = self.resource_windows_dict[resource_id]
+            # Update the resource windows dict
+            self.resource_windows_dict[resource_id] = resource_windows
 
-            # Trim the window using the combined interval
-            self.resource_windows_dict[resource_id] = self._trim_window(
-                window, combined_trim_interval
-            )
 
+    def _remove_interval_from_windows(
+        self, windows, interval_to_remove: tuple[int, int]
+    ) -> np.ndarray:
+        updated_windows = []
+        remove_start, remove_end = interval_to_remove
+
+        for window in windows:
+            window_start = window['start']
+            window_end = window['end']
+
+            # No overlap
+            if remove_end <= window_start or remove_start >= window_end:
+                updated_windows.append(window)
+                continue
+
+            # Interval completely covers the window
+            if remove_start <= window_start and remove_end >= window_end:
+                continue  # Entire window is removed
+
+            # Overlaps at the start
+            if remove_start <= window_start < remove_end < window_end:
+                new_window = window.copy()
+                new_window['start'] = remove_end
+                new_window['duration'] = new_window['end'] - new_window['start']
+                updated_windows.append(new_window)
+                continue
+
+            # Overlaps at the end
+            if window_start < remove_start < window_end <= remove_end:
+                new_window = window.copy()
+                new_window['end'] = remove_start
+                new_window['duration'] = new_window['end'] - new_window['start']
+                updated_windows.append(new_window)
+                continue
+
+            # Overlaps in the middle, split the window
+            if window_start < remove_start and window_end > remove_end:
+                # Create two new windows
+                window1 = window.copy()
+                window1['end'] = remove_start
+                window1['duration'] = window1['end'] - window1['start']
+
+                window2 = window.copy()
+                window2['start'] = remove_end
+                window2['duration'] = window2['end'] - window2['start']
+
+                updated_windows.extend([window1, window2])
+                continue
+
+        return np.array(updated_windows, dtype=window_dtype)
 
 
     def _create_resource_windows_dict(self) -> dict[int, np.ndarray]:

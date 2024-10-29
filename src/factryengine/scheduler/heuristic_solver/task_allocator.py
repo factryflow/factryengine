@@ -251,7 +251,7 @@ class TaskAllocator:
         is_last_window_start = True  # Flag to indicate the start of a window
 
         # Iterate through the range between first and last index
-        for i in range(first_index, last_index + 1):
+        for i in range(first_index + 1, last_index + 1):
             current = resource_intervals[i]
             previous = resource_intervals[i - 1] if i > 0 else 0
             next_value = resource_intervals[i + 1] if i < last_index else 0
@@ -288,7 +288,7 @@ class TaskAllocator:
                 continue
 
             # Detect start of window using masks
-            if is_curr_masked and previous > 0 and next_value > 0 and not is_last_window_start:
+            if is_curr_masked and next_value > 0 and (previous > 0 or is_prev_masked) and not is_last_window_start:
                 indexes.append(i)
                 is_last_window_start = True
                 continue
