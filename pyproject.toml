@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "factryengine"
-version = "0.3.2"
+version = "0.3.3"
 description = "production / job shop / resource scheduler for Python"
 authors = ["Jacob Østergaard Nielsen <jacob.oestergaard.nielsen@gmail.com>"]
 license = "MIT"
